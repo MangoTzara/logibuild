@@ -1,0 +1,12 @@
+[package]
+name = "logibuild"
+description = "LogiBuild: digital logic circuit editor and simulator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+lb_core.workspace = true
+iced = { version = "0.14", features = ["canvas", "tokio", "svg"] }
+rfd = "0.17"

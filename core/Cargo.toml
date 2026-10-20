@@ -1,0 +1,18 @@
+[package]
+name = "lb_core"
+description = "LogiBuild simulation core: signals, components, netlist, event-driven engine, I/O"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+ron.workspace = true
+
+[dev-dependencies]
+criterion = "0.8"
+
+[[bench]]
+name = "sim"
+harness = false

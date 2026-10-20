@@ -1,0 +1,201 @@
+//! Component library on the left: search, categories and project circuits.
+
+use iced::widget::{Space, button, column, container, row, stack, text, text_input, tooltip};
+use iced::{Alignment, Element, Fill, Padding};
+
+use lb_core::component::{Category, Kind};
+
+use crate::app::{App, Message};
+use crate::canvas::Tool;
+use crate::icons::{self, Icon};
+use crate::theme;
+
+fn matches(kind: Kind, query: &str) -> bool {
+    query.is_empty()
+        || kind.name().to_lowercase().contains(query)
+        || format!("{kind:?}").to_lowercase().contains(query)
+        || kind.category().name().to_lowercase().contains(query)
+}
+
+/// Library sections, top to bottom.
+const ORDER: [Category; 7] = [
+    Category::Annotations,
+    Category::Io,
+    Category::Displays,
+    Category::Gates,
+    Category::Combinational,
+    Category::Sequential,
+    Category::Memory,
+];
+
+pub const CIRCUITS_SECTION: &str = "Project circuits";
+
+/// Width of the column with "Open" / "Editing" next to each circuit.
+const SIDE_W: f32 = 52.0;
+
+/// Clickable section header with a disclosure arrow; `count` is shown when
+/// collapsed.
+fn header(label: &str, open: bool, count: usize) -> Element<'_, Message> {
+    let chevron = if open { Icon::ChevronDown } else { Icon::ChevronRight };
+    let mut line = row![
+        icons::icon(chevron, 12.0, theme::colors().muted),
+        text(label.to_string()).size(theme::fs(12.0)).font(theme::FONT_MEDIUM).color(theme::colors().muted),
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center);
+    if !open {
+        line = line
+            .push(Space::new().width(Fill))
+            .push(text(format!("{count}")).size(theme::fs(11.0)).color(theme::colors().muted));
+    }
+    button(line)
+        .on_press(Message::ToggleSection(label.to_string()))
+        .width(Fill)
+        .padding([6, 6])
+        .style(theme::item(false))
+        .into()
+}
+
+/// Padding of list entries: aligned with the section titles.
+const ENTRY: Padding = Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 24.0 };
+
+pub fn view(app: &App) -> Element<'_, Message> {
+    let search = text_input("Search components…", &app.search)
+        .on_input(Message::Search)
+        .size(theme::fs(13.0))
+        .padding(Padding { top: 6.0, right: 8.0, bottom: 6.0, left: 28.0 })
+        .style(theme::input);
+    let search = stack![
+        search,
+        container(icons::icon(Icon::Search, 14.0, theme::colors().muted)).height(Fill).padding([0, 8]).center_y(Fill)
+    ];
+    let query = app.search.trim().to_lowercase();
+    let searching = !query.is_empty();
+    // While searching every section is shown expanded with its matches.
+    let is_open = |section: &str| searching || !app.collapsed.contains(section);
+    let current = match &app.tool {
+        Tool::Place { kind, props, .. } => Some((*kind, props.circuit.clone())),
+        Tool::Select => None,
+    };
+
+    let mut list = column![].spacing(1);
+
+    // Circuits of the project: insert as subcircuit or open.
+    let here = app.circuit().name.clone();
+    let circuits: Vec<(usize, &lb_core::circuit::Circuit)> = app
+        .project
+        .circuits
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| !searching || c.name.to_lowercase().contains(&query))
+        .collect();
+    if !searching || !circuits.is_empty() {
+        let open = is_open(CIRCUITS_SECTION);
+        list = list.push(header(CIRCUITS_SECTION, open, app.project.circuits.len()));
+        if open {
+            for (i, c) in circuits {
+                let name = c.name.clone();
+                let refusal = app.placement_refusal(&name);
+                let placeable = refusal.is_none();
+                let shown = name == here;
+                let selected = current.as_ref().is_some_and(|(k, n)| *k == Kind::Subcircuit && *n == name);
+                let label = if i == 0 { format!("{name}  ★") } else { name.clone() };
+                // The main circuit (★) is never placeable; others only when
+                // they would not contain the shown circuit.
+                let tip = if !shown && i > 0 && !placeable { "(recursive)" } else { "" };
+                // Right column, right aligned: "Open", or "Editing" for the shown circuit.
+                let side: Element<Message> = if shown {
+                    // A state, not an action: grey and without a badge.
+                    container(text("Editing").size(theme::fs(12.0)).color(theme::colors().muted)).padding([3, 6]).into()
+                } else {
+                    button(text("Open").size(theme::fs(12.0)))
+                        .on_press(Message::OpenCircuit(name.clone()))
+                        .padding([3, 6])
+                        .style(theme::link)
+                        .into()
+                };
+                // The shown circuit cannot be placed in itself: its name is only
+                // coloured, unlike the highlight of the subcircuit being placed.
+                let pick = theme::item(selected);
+                let style = move |t: &iced::Theme, st| if shown { theme::current(t, st) } else { pick(t, st) };
+                let pick: Element<Message> = button(
+                    row![
+                        text(label).size(theme::fs(13.0)),
+                        text(tip).size(theme::fs(12.0)).color(theme::colors().muted)
+                    ]
+                    .spacing(6),
+                )
+                .on_press_maybe(placeable.then(|| Message::PickSubcircuit(name.clone())))
+                .width(Fill)
+                .padding(ENTRY)
+                .style(style)
+                .into();
+                // Say why a circuit cannot be placed here.
+                let pick = match refusal {
+                    Some(why) if !shown => tooltip(
+                        pick,
+                        container(text(why).size(theme::fs(12.0)))
+                            .padding([4, 8])
+                            .max_width(260)
+                            .style(theme::tooltip_box),
+                        tooltip::Position::Bottom,
+                    )
+                    .into(),
+                    _ => pick,
+                };
+                list = list.push(
+                    row![pick, container(side).width(theme::fs(SIDE_W)).align_right(theme::fs(SIDE_W))]
+                        .align_y(Alignment::Center),
+                );
+            }
+        }
+    }
+
+    let mut any = false;
+    for cat in ORDER {
+        let kinds: Vec<Kind> = Kind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.category() == cat && *k != Kind::Subcircuit && matches(*k, &query))
+            .collect();
+        if kinds.is_empty() {
+            continue;
+        }
+        any = true;
+        let open = is_open(cat.name());
+        list = list.push(header(cat.name(), open, kinds.len()));
+        if !open {
+            continue;
+        }
+        for k in kinds {
+            let selected = current.as_ref().is_some_and(|(c, _)| *c == k);
+            list = list.push(
+                button(text(k.name()).size(theme::fs(13.0)))
+                    .on_press(Message::PickTool(k))
+                    .width(Fill)
+                    .padding(ENTRY)
+                    .style(theme::item(selected)),
+            );
+        }
+    }
+    if !any && searching {
+        list = list
+            .push(container(text("No components found").size(theme::fs(12.0)).color(theme::colors().muted)).padding(8));
+    }
+
+    let new = theme::tip(
+        button(theme::icon_label(Icon::Add, "", true)).on_press(Message::NewCircuit).padding(6).style(theme::tool),
+        "New circuit",
+    );
+
+    column![
+        container(row![search, new].spacing(4).align_y(Alignment::Center)).padding(Padding {
+            top: 8.0,
+            right: 8.0,
+            bottom: 6.0,
+            left: 8.0
+        }),
+        theme::scroll(container(list).padding(Padding { top: 0.0, right: 10.0, bottom: 10.0, left: 6.0 })).height(Fill),
+    ]
+    .into()
+}
