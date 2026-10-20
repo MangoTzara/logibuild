@@ -101,7 +101,7 @@ API documentation: `cargo doc --no-deps --open`.
 
 ```bash
 cargo test --workspace                       # all tests (headless)
-cargo test --release -p logibuild           # also the 5 000-component routing stress test
+cargo test --release -p logibuild            # also the 5 000-component routing stress test
 cargo bench -p lb_core                       # criterion benchmarks
 cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 ```
