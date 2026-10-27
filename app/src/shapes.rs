@@ -219,6 +219,19 @@ pub fn lod_color(comp: &Component, live: &Live) -> Color {
 }
 
 /// Draws a component. `alpha` < 1 draws a ghost (placement preview).
+/// Marks an instance of a circuit synthesized from HDL: a small tag, and an
+/// orange outline when it is out of date.
+pub fn draw_hdl_mark(frame: &mut Frame, view: View, geom: &CompGeom, stale: bool) {
+    let mut p = Painter { frame, view, geom, alpha: 1.0 };
+    let (w, h) = (geom.layout.w as f32, geom.layout.h as f32);
+    let color = if stale { theme::colors().neutral } else { theme::colors().muted };
+    if stale {
+        let path = p.rounded(-0.25, -0.25, w + 0.25, h + 0.25, 0.4);
+        p.stroke_path(&path, color);
+    }
+    p.center_text("HDL", w / 2.0, h - 0.55, 0.5, color);
+}
+
 pub fn draw_component(frame: &mut Frame, view: View, comp: &Component, geom: &CompGeom, live: &Live, alpha: f32) {
     let mut p = Painter { frame, view, geom, alpha };
     let (w, h) = (geom.layout.w as f32, geom.layout.h as f32);

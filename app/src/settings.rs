@@ -1,4 +1,5 @@
-//! User preferences kept between sessions: colour scheme and text size.
+//! User preferences kept between sessions: colour scheme, text size and
+//! the optional HDL features.
 //! They are stored in `$XDG_CONFIG_HOME/logibuild/settings`, one
 //! `key = value` per line; unknown keys and values are ignored.
 
@@ -38,16 +39,30 @@ pub const TEXT_SIZE_RANGE: std::ops::RangeInclusive<u32> = 50..=200;
 /// Text sizes offered in the settings menu, in percent.
 pub const TEXT_SIZES: [u32; 6] = [90, 100, 110, 125, 150, 175];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
     pub scheme: Scheme,
     /// Percent of the default text size, in [`TEXT_SIZE_RANGE`].
     pub text_size: u32,
+    /// VHDL and Verilog support is shown (menu, panel, toolbar buttons).
+    pub hdl: bool,
+    /// Synthesize again when a source is saved.
+    pub hdl_auto: bool,
+    /// Paths of the tools; empty: found on the `PATH`.
+    pub ghdl: String,
+    pub yosys: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { scheme: Scheme::System, text_size: 100 }
+        Settings {
+            scheme: Scheme::System,
+            text_size: 100,
+            hdl: false,
+            hdl_auto: true,
+            ghdl: String::new(),
+            yosys: String::new(),
+        }
     }
 }
 
@@ -89,13 +104,25 @@ impl Settings {
                         s.text_size = n;
                     }
                 }
+                "hdl" => s.hdl = value == "true",
+                "hdl.auto" => s.hdl_auto = value != "false",
+                "hdl.ghdl" => s.ghdl = value.to_string(),
+                "hdl.yosys" => s.yosys = value.to_string(),
                 _ => {}
             }
         }
         s
     }
 
-    pub fn to_text(self) -> String {
-        format!("scheme = {}\ntext_size = {}\n", self.scheme.key(), self.text_size)
+    pub fn to_text(&self) -> String {
+        format!(
+            "scheme = {}\ntext_size = {}\nhdl = {}\nhdl.auto = {}\nhdl.ghdl = {}\nhdl.yosys = {}\n",
+            self.scheme.key(),
+            self.text_size,
+            self.hdl,
+            self.hdl_auto,
+            self.ghdl,
+            self.yosys
+        )
     }
 }

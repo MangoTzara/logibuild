@@ -48,6 +48,24 @@ LogiBuild projects are UTF-8 text files in [RON](https://github.com/ron-rs/ron)
 | `components`, `wires` | no | The main circuit. |
 | `subcircuits` | no | Circuits embedded in the file, sorted by name. |
 | `libraries` | no | Folders (relative to the file) searched for missing subcircuits: a circuit named `x` is loaded from `<folder>/x.lbc`, recursively. Circuits loaded this way are not embedded when saving. |
+| `hdl` | no | HDL sources and the entities synthesized from them, see below. |
+
+## HDL
+
+```ron
+    hdl: (sources: ["hdl/alu.vhd", "hdl/uart.v"], tops: ["cpu"], vhdl_std: V93),
+```
+
+| Field | Meaning |
+| --- | --- |
+| `sources` | VHDL (`.vhd`, `.vhdl`) and Verilog (`.v`, `.sv`) files, relative to the project file (absolute when outside its folder). |
+| `tops` | Entities or modules synthesized into circuits; the entities they instantiate become circuits too. |
+| `vhdl_std` | `V93` or `V08` (default). |
+
+A circuit synthesized from the sources (an entry of `subcircuits`) carries
+`hdl: (digest: "…")`, the fingerprint of the sources it was made from: the editor keeps it
+read-only and shows it out of date when the sources no longer match. Removing the field makes
+it an ordinary circuit.
 
 ## Components
 

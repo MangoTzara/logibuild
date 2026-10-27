@@ -6,7 +6,13 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = ["hdl"]
+# VHDL and Verilog sources synthesized into circuits (GHDL, Yosys).
+hdl = ["dep:lb_hdl"]
+
 [dependencies]
 lb_core.workspace = true
-iced = { version = "0.14", features = ["canvas", "tokio", "svg"] }
+lb_hdl = { workspace = true, optional = true }
+iced = { version = "0.14", features = ["canvas", "tokio", "svg", "advanced"] }
 rfd = "0.17"

@@ -19,7 +19,7 @@ use lb_core::netlist::NetId;
 use lb_core::sim::Simulator;
 
 use crate::routing::{self, Routes, dist_to_segment};
-use crate::shapes::{Live, View, draw_component, draw_pins, is_live, lod_color};
+use crate::shapes::{Live, View, draw_component, draw_hdl_mark, draw_pins, is_live, lod_color};
 use crate::theme;
 
 /// Precomputed geometry of the circuit shown in the editor.
@@ -746,6 +746,11 @@ impl canvas::Program<EditorEvent> for Editor<'_> {
                 }
                 if !is_live(c.kind) {
                     draw_component(frame, self.view, c, g, &Live::default(), 1.0);
+                }
+                if c.kind == Kind::Subcircuit
+                    && let Some(h) = self.project.circuit(&c.props.circuit).and_then(|x| x.hdl.as_ref())
+                {
+                    draw_hdl_mark(frame, self.view, g, h.stale);
                 }
                 let connected = |i: usize| self.cache.routes.connected.contains(&(c.id, i));
                 draw_pins(frame, self.view, g, &Live::default(), &connected);

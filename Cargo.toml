@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["core", "app"]
+members = ["core", "hdl", "app"]
 
 [workspace.package]
 version = "0.1.0"
@@ -10,6 +10,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 lb_core = { path = "core" }
+lb_hdl = { path = "hdl" }
 serde = { version = "1", features = ["derive"] }
 ron = "0.12"
 

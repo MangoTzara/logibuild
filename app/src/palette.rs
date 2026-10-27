@@ -103,6 +103,12 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 // The main circuit (★) is never placeable; others only when
                 // they would not contain the shown circuit.
                 let tip = if !shown && i > 0 && !placeable { "(recursive)" } else { "" };
+                // Circuits synthesized from HDL, orange when out of date.
+                let (tag, tag_color) = match &c.hdl {
+                    Some(h) if h.stale => ("HDL · outdated", theme::colors().neutral),
+                    Some(_) => ("HDL", theme::colors().muted),
+                    None => ("", theme::colors().muted),
+                };
                 // Right column, right aligned: "Open", or "Editing" for the shown
                 // circuit. Inside the row, so that the whole row lights up.
                 let side: Element<Message> = if shown {
@@ -115,8 +121,11 @@ pub fn view(app: &App) -> Element<'_, Message> {
                         .style(theme::bare(theme::colors().link, theme::colors().accent))
                         .into()
                 };
+                // The shown circuit cannot be placed in itself: its name is only
+                // coloured, unlike the highlight of the subcircuit being placed.
                 let content = row![
                     text(label).size(theme::fs(13.0)),
+                    text(tag).size(theme::fs(11.0)).color(tag_color),
                     text(tip).size(theme::fs(12.0)).color(theme::colors().muted),
                     Space::new().width(Fill),
                     container(side).width(theme::fs(SIDE_W)).align_right(theme::fs(SIDE_W)),

@@ -11,6 +11,8 @@ use crate::theme;
 macro_rules! icons {
     ($($name:ident => $body:literal,)*) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        // Some icons are used by the optional HDL feature only.
+        #[cfg_attr(not(feature = "hdl"), allow(dead_code))]
         pub enum Icon { $($name,)* }
 
         impl Icon {
@@ -49,10 +51,15 @@ icons! {
     Wave => r##"<path d="M1 11.5h3.5v-7h4v7h3v-7H15"/>"##,
     Add => r##"<path d="M8 3v10M3 8h10"/>"##,
     Close => r##"<path d="m4 4 8 8M12 4l-8 8"/>"##,
+    Check => r##"<path d="m3 8.5 3 3 7-7" stroke-width="1.5"/>"##,
     ChevronDown => r##"<path d="m4 6 4 4 4-4"/>"##,
     ChevronRight => r##"<path d="m6 4 4 4-4 4"/>"##,
+    ChevronLeft => r##"<path d="M10 4 6 8l4 4"/>"##,
     Export => r##"<path d="M8 10.5v-9M5 4.5l3-3 3 3"/><path d="M2.5 9.5v5h11v-5"/>"##,
     Search => r##"<circle cx="6.5" cy="6.5" r="4"/><path d="m9.5 9.5 5 5"/>"##,
+    Compile => r##"<circle cx="8" cy="8" r="6.5"/><path d="m5 8.2 2 2 4-4.2" stroke-linecap="round"/>"##,
+    Chip => r##"<path d="M4.5 4.5h7v7h-7z"/><path d="M6.5 1.5v3M9.5 1.5v3M6.5 11.5v3M9.5 11.5v3M1.5 6.5h3M1.5 9.5h3M11.5 6.5h3M11.5 9.5h3"/>"##,
+    Stop => r##"<path d="M3.5 3.5h9v9h-9z" fill="#000"/>"##,
     CheckOff => r##"<rect x="2.5" y="2.5" width="11" height="11" rx="2"/>"##,
     CheckOn => r##"<rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="m5 8.2 2 2 4-4.2" stroke-width="1.5" stroke-linecap="round"/>"##,
     RadioOff => r##"<circle cx="8" cy="8" r="5.5"/>"##,
@@ -73,6 +80,7 @@ fn svg<'a>(handle: Handle, size: f32) -> Svg<'a, Theme> {
 pub enum Emblem {
     Error,
     Warning,
+    Info,
 }
 
 pub fn emblem<'a>(e: Emblem, size: f32) -> Svg<'a, Theme> {
@@ -90,7 +98,21 @@ pub fn emblem<'a>(e: Emblem, size: f32) -> Svg<'a, Theme> {
         )
         .into_bytes())
     });
-    svg(if e == Emblem::Error { ERROR.clone() } else { WARNING.clone() }, size)
+    static INFO: LazyLock<Handle> = LazyLock::new(|| {
+        Handle::from_memory(format!(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="{}"/><path d="M8 7v4.5" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="4.6" r=".9" fill="#fff"/></svg>"##,
+            hex(theme::LIGHT.link)
+        )
+        .into_bytes())
+    });
+    svg(
+        match e {
+            Emblem::Error => ERROR.clone(),
+            Emblem::Warning => WARNING.clone(),
+            Emblem::Info => INFO.clone(),
+        },
+        size,
+    )
 }
 
 fn hex(c: Color) -> String {

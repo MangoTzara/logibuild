@@ -3,6 +3,8 @@
 mod app;
 mod autoroute;
 mod canvas;
+#[cfg(feature = "hdl")]
+mod hdl;
 mod icons;
 mod palette;
 mod props;

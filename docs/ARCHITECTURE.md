@@ -1,14 +1,17 @@
 # Architecture
 
-LogiBuild is a Cargo workspace with two crates:
+LogiBuild is a Cargo workspace with three crates:
 
 ```text
 core/  lb_core     library, no GUI dependency: everything that is not drawing
+hdl/   lb_hdl      VHDL/Verilog: GHDL and Yosys, import of synthesized netlists
 app/   logibuild  the iced 0.14 application
 ```
 
-`app` depends on `lb_core`, never the other way round. The core can be used headless
-(tests, benchmarks, scripts); see the example in `core/src/lib.rs`.
+`app` depends on the libraries, never the other way round, and `lb_hdl` on `lb_core`. The core
+can be used headless (tests, benchmarks, scripts); see the example in `core/src/lib.rs`. HDL
+support is optional: `cargo build --no-default-features` leaves out `lb_hdl` and the HDL code of
+the application.
 
 ## `lb_core`
 
@@ -74,6 +77,47 @@ A `Command` is a list of `Op`s (`AddComp`, `RemoveComp`, `UpdateComp{before, aft
 differential snapshot of only what changed. Commands with the same `merge` key are
 coalesced (typing in a field), the history is unbounded and tracks the saved state.
 
+## `lb_hdl`
+
+| Module | Responsibility |
+| --- | --- |
+| `toolchain` | Finding GHDL and Yosys, the Yosys script, running the tools in a work folder (cancellable). |
+| `json` | The netlist written by Yosys' `write_json`. |
+| `import` | Yosys modules to LogiBuild circuits. |
+| `place` | Automatic layout of imported circuits. |
+| `lang` | File types, the units a source declares, tokens for highlighting. |
+| `log` | Messages of the tools, with their source location. |
+
+**Compile** runs `ghdl -i` on the VHDL files and `ghdl -m` on the tops (GHDL finds the order
+of analysis), and Yosys `read_verilog` on the Verilog files. **Synthesize** then runs Yosys
+once per top: `ghdl` (plugin) or `read_verilog`, `hierarchy`, `proc`, `opt`, `memory -nomap`,
+`pmuxtree`, then `techmap` only on the operators without a component (`$mul`, `$div`…), and
+`write_json`. The hierarchy is not flattened. `opt` runs with `-mux_undef`, which removes the
+`we ? addr : x` multiplexers `proc` puts in front of memory write ports, so that a RAM whose
+reads and writes use the same address stays one RAM. GHDL names an instantiated entity
+`<entity>_B<architecture>`; the circuits are renamed after the entity.
+
+The importer converts each module into a circuit, children first. Each cell becomes one or a
+few components (`$add` an adder, `$dff`/`$adff` a register, with XOR gates for a non-zero
+reset value, `$mem_v2` a ROM or a RAM, an instance a subcircuit…) reading and driving vectors
+of bits. Once every cell is converted, each vector read is traced back to the output pins
+driving its bits: one whole pin is a wire, a slice goes through one splitter per pin (cut
+where all its slices start and end), several pieces or constants through a merger (shared
+between identical reads). Nets with six readers or more are drawn with tunnels. A memory that
+fits no RAM component (several ports, separate addresses) makes the importer ask for another
+run with `memory` mapping it to registers.
+
+Layout: columns by longest path from the inputs (feedback edges, found by a depth-first
+search, are ignored), barycentre ordering within columns, rows aligned with the pins
+feeding each component; inputs first and outputs last in port order, which is also the pin
+order of the circuit as a subcircuit. Constants and tunnels with one connection sit beside
+their pin. Wires are left to the router.
+
+Synthesized circuits carry `HdlInfo` (digest of the sources). The application keeps them
+read-only (commands editing their components are refused), compares the digest with the
+sources on disk to show them out of date, and applies a synthesis as one command replacing
+the circuits.
+
 ## `logibuild` (app)
 
 | Module | Responsibility |
@@ -86,7 +130,8 @@ coalesced (typing in a field), the history is unbounded and tracks the saved sta
 | `waveform` | The timing diagram canvas. |
 | `palette`, `props` | Left and right panels. |
 | `theme` | Light and dark colour schemes (from KDE Breeze), widget styles (KDE Plasma look), embedded Noto Sans, signal colours, text scaling (`fs`). |
-| `settings` | Colour scheme and text size, saved in the user configuration directory. |
+| `settings` | Colour scheme, text size and HDL options, saved in the user configuration directory. |
+| `hdl` | (feature `hdl`) HDL panel: sources, editor with highlighting, jobs run on a thread, file polling, applying a synthesis. |
 | `icons` | Symbolic 16 px toolbar and menu icons (inline SVG, tinted per state). |
 
 The application owns the project, the history, the selection and one simulator per

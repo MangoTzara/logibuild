@@ -624,6 +624,16 @@ fn circuit_view(app: &App) -> Element<'_, Message> {
         col =
             col.push(note("Inputs and outputs become the terminals of this circuit when it is used as a subcircuit."));
     }
+    if let Some(h) = &c.hdl {
+        col = col.push(section("HDL"));
+        col = col.push(note(if h.stale {
+            "Synthesized from the HDL sources, which changed since: out of date."
+        } else {
+            "Synthesized from the HDL sources: read-only."
+        }));
+        col = col.push(row![push("Convert to circuit", Message::ConvertCircuit(c.name.clone()))]);
+        col = col.push(note("Converting makes it an ordinary circuit you can edit; the sources no longer update it."));
+    }
     if !is_main {
         col = col.push(
             row![

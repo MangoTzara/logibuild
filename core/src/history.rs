@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 
-use crate::circuit::{Circuit, CompId, Component, PinRef, Project, Wire};
+use crate::circuit::{Circuit, CompId, Component, HdlConfig, PinRef, Project, Wire};
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Op {
@@ -27,6 +27,11 @@ pub enum Op {
         from: String,
         to: String,
     },
+    /// Replaces the HDL settings of the project.
+    SetHdl {
+        before: Box<HdlConfig>,
+        after: Box<HdlConfig>,
+    },
 }
 
 impl Op {
@@ -40,6 +45,7 @@ impl Op {
             Op::AddCircuit(i, c) => Op::RemoveCircuit(*i, c.clone()),
             Op::RemoveCircuit(i, c) => Op::AddCircuit(*i, c.clone()),
             Op::RenameCircuit { from, to } => Op::RenameCircuit { from: to.clone(), to: from.clone() },
+            Op::SetHdl { before, after } => Op::SetHdl { before: after.clone(), after: before.clone() },
         }
     }
 
@@ -66,6 +72,7 @@ impl Op {
                     }
                 }
             }
+            Op::SetHdl { after, .. } => project.hdl = (**after).clone(),
             _ => {
                 let Some(c) = project.circuit_mut(circuit) else { return };
                 match self {

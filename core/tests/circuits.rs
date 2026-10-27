@@ -155,7 +155,7 @@ fn d_flip_flop() -> Project {
     b.w(master, "Q", slave, "D");
     b.w(clk, "out", slave, "EN");
     b.w(slave, "Q", q, "in");
-    Project { circuits: vec![b.done(), d_latch()], libraries: vec![] }
+    Project { circuits: vec![b.done(), d_latch()], libraries: vec![], hdl: Default::default() }
 }
 
 #[test]
@@ -321,7 +321,7 @@ fn ripple_carry_adder() -> Project {
     }
     b.w(m, "out", s, "in");
     b.w(carry.0, &carry.1, cout, "in");
-    Project { circuits: vec![b.done(), full_adder()], libraries: vec![] }
+    Project { circuits: vec![b.done(), full_adder()], libraries: vec![], hdl: Default::default() }
 }
 
 #[test]
@@ -610,7 +610,7 @@ fn tunnels_are_local_to_their_instance() {
     let (c, nc) = (top.comp(Kind::Input, "c"), top.comp(Kind::Output, "nc"));
     inverter(&mut top, c, "out", nc, "x");
 
-    let p = Project { circuits: vec![top.done(), inner.done()], libraries: vec![] };
+    let p = Project { circuits: vec![top.done(), inner.done()], libraries: vec![], hdl: Default::default() };
     let mut h = Harness::new(&p, "top", zero_delay());
     for v in 0..8u64 {
         for (k, n) in ["a", "b", "c"].into_iter().enumerate() {
@@ -631,7 +631,7 @@ fn subcircuit_recursion_rejected() {
     b.sub("c", "");
     let mut c = Builder::new("c");
     c.sub("a", "");
-    let p = Project { circuits: vec![a.done(), b.done(), c.done()], libraries: vec![] };
+    let p = Project { circuits: vec![a.done(), b.done(), c.done()], libraries: vec![], hdl: Default::default() };
     match compile(&p, "a") {
         Err(ProjectError::Recursion(cycle)) => assert_eq!(cycle, ["a", "b", "c", "a"]),
         other => panic!("expected recursion error, got {:?}", other.map(|_| ())),

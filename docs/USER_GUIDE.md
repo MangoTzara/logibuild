@@ -194,6 +194,78 @@ The circuit marked ★ is the main one (saved first in the file); **Make main**,
 **Delete circuit** are in the circuit panel. A circuit used as a subcircuit cannot be made
 the main one.
 
+## HDL: VHDL and Verilog
+
+Entities written in VHDL, or modules in Verilog, can become circuits of the project. The
+sources are compiled by two external tools: **GHDL** (VHDL) and **Yosys** (synthesis, and
+Verilog). The simplest way to get both, with the GHDL plugin for Yosys, is the
+[OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases) (Linux, macOS,
+Windows).
+
+HDL support is off by default: turn it on with **Settings → Features → HDL: VHDL and
+Verilog**. This adds the **HDL** menu and the **HDL view**: **HDL ›**, at the top right of the
+canvas (or **HDL → HDL view**), shows it in place of the canvas, the side panels and the
+waveform, with **Compile** and **Synthesize** at its top; **‹ Circuit** goes back. Turning it off
+again only hides them: circuits synthesized from HDL stay in the project and still simulate.
+
+### Sources
+
+The left column of the HDL view lists the source files of the project with the entities
+or modules each declares. **Open files…** (in the toolbar) adds existing files, **New VHDL file…** and **New
+Verilog file…** create one from a template; **Remove**, above the editor, removes
+the file shown (the file itself is kept). Sources are stored relative to the project file. The order of the files
+does not matter: GHDL works out the order of analysis. The VHDL revision (VHDL-93 or
+VHDL-2008) is chosen in the toolbar; the Synopsys packages (`std_logic_unsigned`…) are
+available.
+
+**Settings → HDL tools…** (also **Tools…** in the HDL view) says where GHDL and Yosys were
+found (on the `PATH`, or in `~/oss-cad-suite/bin` where the suite is usually unpacked), or
+lets you type the path of each program or of the folder holding it (such as
+`~/oss-cad-suite/bin`). When only one of the two is found, the other is looked for in the same
+folder.
+
+The three columns of the HDL view (sources, editor, messages) are resized by dragging the lines
+between them.
+
+### Editor
+
+Click a file (or an entity, to go to its declaration) to open it in the editor, with keywords
+highlighted. Each open file has a tab with its name. **Ctrl+S** in the editor saves the file
+(saving the project saves the edited sources too), **Open externally** opens it in your usual
+editor. Files edited elsewhere are reloaded automatically; if you were editing it here too, a
+message lets you reload it or keep your version.
+
+### Compile and synthesize
+
+* **Compile** checks every source: GHDL analyzes and elaborates the VHDL, Yosys reads the
+  Verilog. It needs no entity to be added to the project.
+* **Add** next to an entity synthesizes it into a circuit of the same name, together with the
+  entities it instantiates (each one becomes a subcircuit). Place it from **Project
+  circuits**; **View** next to the entity shows the synthesized circuit.
+* **Synthesize** synthesizes again every entity added to the project; when none was added
+  yet, it adds and synthesizes all the entities and modules of the sources. With **Synthesize when
+  a source is saved** (Settings), saving a source does it automatically.
+
+Messages of the tools appear on the right of the HDL view; click a message with a location to
+open the file at that line. **Cancel** stops a long run.
+
+Synthesized circuits keep the structure of the source: operators stay whole (an addition is
+one adder, a comparison one comparator, a `case` a multiplexer), registers are named after
+their signal, constant tables become ROMs and simple single-port memories RAMs. Signals read
+in many places (clocks, resets) are drawn with tunnels. Multiplication and division have no
+component and become gates; memories with several ports become registers and multiplexers.
+
+### Synthesized circuits
+
+A synthesized circuit is marked **HDL** in Project circuits and on its instances. It is
+**read-only**: change it by editing its sources. When the sources change, it is marked
+**outdated** in orange until it is synthesized again; if the synthesis fails, the last
+working version stays in place, still outdated. A synthesis replaces the circuits in one
+step, which **Undo** reverts.
+
+**Convert to circuit** (in the banner over the circuit or in the circuit panel) makes it an
+ordinary circuit that you can edit by hand; the sources no longer update it.
+
 ## Memories
 
 ROM and RAM contents are typed as hexadecimal words separated by spaces (`N*value` repeats
@@ -227,6 +299,7 @@ text size, from 90% to 175% (100% is the default). The choices are kept in
 | Rotate / Flip | R / F |
 | Run or pause | Space |
 | Single step | S |
+| Save the source being edited (HDL editor) | Ctrl+S |
 | Cancel tool, clear selection, leave an instance | Esc |
 | Zoom to fit / in / out | Ctrl+0 / Ctrl++ / Ctrl+- |
 | Pan | touchpad two-finger scroll, middle or right drag, Space+drag, Shift+wheel |

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::circuit::{Circuit, Component, Origin, Project, Wire};
+use crate::circuit::{Circuit, Component, HdlConfig, Origin, Project, Wire};
 use crate::component::Kind;
 
 pub const FORMAT_VERSION: u32 = 1;
@@ -52,6 +52,8 @@ struct FileV1 {
     subcircuits: Vec<Circuit>,
     #[serde(default)]
     libraries: Vec<String>,
+    #[serde(default)]
+    hdl: HdlConfig,
 }
 
 fn compact<T: Serialize>(v: &T) -> String {
@@ -110,6 +112,9 @@ fn write_circuit_body(out: &mut String, c: &Circuit, indent: &str) {
         let _ = writeln!(out, "{indent}    {},", compact(w));
     }
     let _ = writeln!(out, "{indent}],");
+    if let Some(hdl) = &c.hdl {
+        let _ = writeln!(out, "{indent}hdl: {},", compact(hdl));
+    }
 }
 
 /// Serializes a project to the textual `.lbc` format. Circuits loaded from
@@ -133,13 +138,18 @@ pub fn to_ron(project: &Project) -> String {
     if !project.libraries.is_empty() {
         let _ = writeln!(out, "    libraries: {},", compact(&project.libraries));
     }
+    if !project.hdl.is_empty() {
+        let _ = writeln!(out, "    hdl: {},", compact(&project.hdl));
+    }
     out.push_str(")\n");
     out
 }
 
 /// Parses the textual format. Library references are not resolved.
 pub fn from_ron(text: &str, path: &Path) -> Result<Project, IoError> {
-    let file: FileV1 = ron::from_str(text).map_err(|e| IoError::Parse(path.to_path_buf(), e.to_string()))?;
+    // Optional fields such as `hdl` are written without `Some(...)`.
+    let options = ron::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
+    let file: FileV1 = options.from_str(text).map_err(|e| IoError::Parse(path.to_path_buf(), e.to_string()))?;
     if file.version == 0 || file.version > FORMAT_VERSION {
         return Err(IoError::Version(path.to_path_buf(), file.version));
     }
@@ -151,7 +161,7 @@ pub fn from_ron(text: &str, path: &Path) -> Result<Project, IoError> {
     for c in &mut circuits {
         c.normalize();
     }
-    Ok(Project { circuits, libraries: file.libraries })
+    Ok(Project { circuits, libraries: file.libraries, hdl: file.hdl })
 }
 
 /// Loads a project file, its external `.hex` memory images and the
@@ -396,6 +406,26 @@ mod tests {
         let back = from_ron(&text, Path::new("x.lbc")).unwrap();
         assert_eq!(back, p);
         assert_eq!(to_ron(&back), text, "stable output");
+    }
+
+    #[test]
+    fn round_trip_with_hdl() {
+        let mut p = half_adder();
+        let mut alu = Circuit::new("alu");
+        add(&mut alu, Kind::Input, "a");
+        alu.hdl = Some(crate::circuit::HdlInfo { digest: "0123abcd".into(), stale: true });
+        p.circuits.push(alu);
+        p.hdl.sources = vec!["hdl/alu.vhd".into(), "hdl/uart.v".into()];
+        p.hdl.tops.push("alu".into());
+        p.hdl.vhdl_std = crate::circuit::VhdlStd::V93;
+        let text = to_ron(&p);
+        assert!(text.contains("hdl: (digest: \"0123abcd\"),"), "{text}");
+        assert!(text.contains("hdl: (sources: [\"hdl/alu.vhd\", \"hdl/uart.v\"], tops: [\"alu\"], vhdl_std: V93),"));
+        let back = from_ron(&text, Path::new("x.lbc")).unwrap();
+        // `stale` is computed by the editor, never saved.
+        p.circuits[1].hdl.as_mut().unwrap().stale = false;
+        assert_eq!(back, p);
+        assert!(!to_ron(&half_adder()).contains("hdl"), "nothing written without HDL");
     }
 
     #[test]
