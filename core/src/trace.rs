@@ -34,18 +34,6 @@ impl TraceSignal {
         (i > 0).then(|| self.samples[i - 1].1)
     }
 
-    /// First change strictly after `time`.
-    pub fn next_change(&self, time: u64) -> Option<u64> {
-        let i = self.samples.partition_point(|(t, _)| *t <= time);
-        self.samples.get(i).map(|s| s.0)
-    }
-
-    /// Last change strictly before `time`.
-    pub fn prev_change(&self, time: u64) -> Option<u64> {
-        let i = self.samples.partition_point(|(t, _)| *t < time);
-        (i > 0).then(|| self.samples[i - 1].0)
-    }
-
     pub fn first_time(&self) -> Option<u64> {
         self.samples.front().map(|s| s.0)
     }
@@ -362,8 +350,6 @@ mod tests {
         assert_eq!(s.first_time(), Some(5));
         assert_eq!(s.value_at(12), Some(Signal::bool(false)));
         assert_eq!(s.value_at(4), None);
-        assert_eq!(s.next_change(5), Some(10));
-        assert_eq!(s.prev_change(10), Some(5));
     }
 
     #[test]

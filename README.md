@@ -9,7 +9,7 @@ A digital logic circuit editor and simulator inspired by Logisim, written in Rus
 * Event-driven, deterministic simulation with gate delays or zero-delay mode, oscillation
   detection, single stepping by event, delta, tick or clock edge (~9 M gate evaluations/s).
 * Automatic orthogonal wire routing around components, with editable waypoints.
-* Integrated waveform viewer with cursors and CSV/VCD export (GTKWave).
+* Integrated waveform viewer with CSV/VCD export (GTKWave).
 * Unlimited undo/redo, copy/paste, alignment; text project files that diff well in git.
 
 ## Building

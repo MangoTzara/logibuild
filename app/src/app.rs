@@ -1733,14 +1733,6 @@ impl App {
                 }
                 self.wave.selected = None;
             }
-            WaveMsg::CursorA(t) => {
-                self.wave.cursor_a = Some(t);
-                self.wave.follow = false;
-            }
-            WaveMsg::CursorB(t) => {
-                self.wave.cursor_b = Some(t);
-                self.wave.follow = false;
-            }
             WaveMsg::Scroll(start) => {
                 self.wave.start = start;
                 self.wave.follow = false;
@@ -1750,40 +1742,10 @@ impl App {
                 self.wave.follow = !self.wave.follow;
                 self.wave.follow_to(now);
             }
-            WaveMsg::NextEdge | WaveMsg::PrevEdge => {
-                let next = matches!(msg, WaveMsg::NextEdge);
-                let from = self.wave.cursor_a.unwrap_or(self.wave.start as u64);
-                let sel = self.wave.selected;
-                if let Some(sim) = self.sim() {
-                    let signals = sim.trace.signals();
-                    let candidates = signals.iter().enumerate().filter(|(i, _)| sel.is_none_or(|s| s == *i));
-                    let found = if next {
-                        candidates.filter_map(|(_, s)| s.next_change(from)).min()
-                    } else {
-                        candidates.filter_map(|(_, s)| s.prev_change(from)).max()
-                    };
-                    match found {
-                        Some(t) => {
-                            self.wave.cursor_a = Some(t);
-                            self.wave.follow = false;
-                            let span = self.wave.visible_ticks();
-                            let start = self.wave.start;
-                            if (t as f64) < start || (t as f64) > start + span {
-                                self.wave.start = (t as f64 - span / 2.0).max(0.0);
-                            }
-                        }
-                        None => self.set_status("No further edge"),
-                    }
-                }
-            }
             WaveMsg::Fit => {
                 let start = self.sim().map_or(0, |s| s.trace.start_time());
                 self.wave.fit(start, now.max(start + 10));
                 self.wave.follow = false;
-            }
-            WaveMsg::ClearCursors => {
-                self.wave.cursor_a = None;
-                self.wave.cursor_b = None;
             }
             WaveMsg::ExportCsv => {
                 return save_file_task("signals.csv", "CSV", &["csv"], |p| Message::WaveExportPicked(false, p));
@@ -2015,26 +1977,16 @@ impl App {
             button(content).on_press(Message::Wave(msg)).padding([4, 6]).style(theme::tool)
         };
         let wicon = |i: Icon, label: &str, msg: WaveMsg| theme::tip(wbtn(theme::icon_label(i, "", true), msg), label);
-        let delta = match (self.wave.cursor_a, self.wave.cursor_b) {
-            (Some(a), Some(b)) => format!("A = {a}   B = {b}   Δ = {} tick", a.abs_diff(b)),
-            (Some(a), None) => format!("A = {a}   (Right-click for B)"),
-            _ => "Left-click: A · Right-click: B".into(),
-        };
         let header = row![
             text("Waveform").size(theme::fs(13.0)).font(theme::FONT_MEDIUM),
             Space::new().width(6),
             text(format!("t = {now}")).size(theme::fs(12.0)).color(theme::colors().muted),
             Space::new().width(Fill),
-            text(delta).size(theme::fs(12.0)).color(theme::colors().muted),
-            Space::new().width(6),
             button(text("Follow").size(theme::fs(13.0)))
                 .on_press(Message::Wave(WaveMsg::ToggleFollow))
                 .padding([4, 8])
                 .style(theme::toggle(self.wave.follow)),
-            wicon(Icon::ChevronLeft, "Previous edge", WaveMsg::PrevEdge),
-            wicon(Icon::ChevronRight, "Next edge", WaveMsg::NextEdge),
             wicon(Icon::Fit, "Fit to window", WaveMsg::Fit),
-            wbtn(text("Clear cursors").size(theme::fs(13.0)).into(), WaveMsg::ClearCursors).padding([4, 8]),
             theme::tool_separator(),
             theme::tip(wbtn(theme::icon_label(Icon::Export, "CSV", true), WaveMsg::ExportCsv), "Export as CSV"),
             theme::tip(

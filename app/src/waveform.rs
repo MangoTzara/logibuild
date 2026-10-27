@@ -1,7 +1,7 @@
 //! Waveform (timing diagram) panel.
 //!
 //! Draws the signals recorded by the simulator's [`Trace`]: one row per
-//! signal, names on the left, a time ruler on top, cursors A/B. Time is
+//! signal, names on the left, a time ruler on top. Time is
 //! scrolled and zoomed horizontally; the panel can follow the simulation.
 
 use iced::alignment::Vertical;
@@ -17,8 +17,6 @@ use crate::theme;
 
 pub const NAME_W: f32 = 190.0;
 pub const RULER_H: f32 = 22.0;
-/// Half width of the A/B tags on the ruler.
-const TAG_HALF: f32 = 8.0;
 pub const ROW_H: f32 = 28.0;
 /// Zoom limits, in pixels per tick.
 const MIN_ZOOM: f64 = 1e-7;
@@ -33,8 +31,6 @@ pub struct WaveView {
     /// Time at the left edge of the wave area.
     pub start: f64,
     pub follow: bool,
-    pub cursor_a: Option<u64>,
-    pub cursor_b: Option<u64>,
     pub selected: Option<usize>,
     pub size: Size,
     /// Time span requested before the panel was laid out.
@@ -48,8 +44,6 @@ impl Default for WaveView {
             zoom: 4.0,
             start: 0.0,
             follow: true,
-            cursor_a: None,
-            cursor_b: None,
             selected: None,
             size: Size::ZERO,
             pending_span: None,
@@ -121,15 +115,10 @@ pub enum WaveMsg {
     Select(usize),
     CycleRadix(usize),
     Remove(usize),
-    CursorA(u64),
-    CursorB(u64),
     Scroll(f64),
     Zoom { factor: f64, anchor: f64 },
     ToggleFollow,
-    NextEdge,
-    PrevEdge,
     Fit,
-    ClearCursors,
     ExportCsv,
     ExportVcd,
     Hide,
@@ -198,18 +187,9 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
                     }
                     return None;
                 }
-                if p.x >= NAME_W {
-                    let t = self.view.time_at(p.x).max(0.0);
-                    match b {
-                        mouse::Button::Right => {
-                            return Some(canvas::Action::publish(WaveMsg::CursorB(t.round() as u64)).and_capture());
-                        }
-                        mouse::Button::Left | mouse::Button::Middle => {
-                            state.drag = Some((p, self.view.start, false));
-                            return Some(canvas::Action::capture());
-                        }
-                        _ => {}
-                    }
+                if p.x >= NAME_W && matches!(b, mouse::Button::Left | mouse::Button::Middle) {
+                    state.drag = Some((p, self.view.start, false));
+                    return Some(canvas::Action::capture());
                 }
             }
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
@@ -222,14 +202,7 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
                     }
                 }
             }
-            Event::Mouse(mouse::Event::ButtonReleased(_)) => {
-                if let Some((p0, _, moved)) = state.drag.take()
-                    && !moved
-                {
-                    let t = self.view.time_at(p0.x).max(0.0).round() as u64;
-                    return Some(canvas::Action::publish(WaveMsg::CursorA(t)));
-                }
-            }
+            Event::Mouse(mouse::Event::ButtonReleased(_)) => state.drag = None,
             Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                 let p = pos?;
                 let (dx, dy) = match delta {
@@ -272,21 +245,12 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
         let t0 = (v.start / step).floor() * step;
         let mut t = t0;
         let grid_color = theme::colors().wave_grid;
-        // Tick labels that would run under a cursor tag are left out.
-        let tags: Vec<f32> = [v.cursor_a, v.cursor_b].into_iter().flatten().map(|c| v.x_of(c as f64)).collect();
         while v.x_of(t) < size.width {
             let x = v.x_of(t);
             if x >= wave_x0 {
                 f.fill_rectangle(Point::new(x, RULER_H), Size::new(1.0, size.height - RULER_H), grid_color);
-                let label = format!("{}", t as u64);
-                // Approximate width of the digits at 11 px.
-                let (l0, l1) = (x + 3.0, x + 3.0 + 6.5 * label.len() as f32);
-                if tags.iter().any(|&c| l0 < c + TAG_HALF + 2.0 && l1 > c - TAG_HALF - 2.0) {
-                    t += step;
-                    continue;
-                }
                 f.fill_text(Text {
-                    content: label,
+                    content: format!("{}", t as u64),
                     position: Point::new(x + 3.0, RULER_H / 2.0),
                     color: theme::colors().muted,
                     size: theme::fs(11.0).into(),
@@ -312,7 +276,7 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
             self.draw_signal(&mut f, s, y0, t_end, size.width);
         }
 
-        // Separator, now marker and cursors.
+        // Separator and now marker.
         f.fill_rectangle(Point::new(NAME_W - 1.0, 0.0), Size::new(1.0, size.height), theme::colors().separator);
         let now_x = v.x_of(self.now as f64);
         if now_x >= wave_x0 && now_x <= size.width {
@@ -321,29 +285,6 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
                 Size::new(1.0, size.height),
                 Color { a: 0.4, ..theme::colors().muted },
             );
-        }
-        for (c, color, name) in
-            [(v.cursor_a, theme::colors().accent, "A"), (v.cursor_b, theme::colors().wire_error, "B")]
-        {
-            let Some(c) = c else { continue };
-            let x = v.x_of(c as f64);
-            if x < wave_x0 || x > size.width {
-                continue;
-            }
-            f.fill_rectangle(Point::new(x - 0.75, 0.0), Size::new(1.5, size.height), color);
-            let chip =
-                Path::rounded_rectangle(Point::new(x - TAG_HALF, 2.0), Size::new(2.0 * TAG_HALF, 16.0), 4.0.into());
-            f.fill(&chip, color);
-            f.fill_text(Text {
-                content: name.into(),
-                position: Point::new(x, 10.0),
-                color: Color::WHITE,
-                size: theme::fs(11.0).into(),
-                font: theme::FONT,
-                align_x: TextAlign::Center,
-                align_y: Vertical::Center,
-                ..Default::default()
-            });
         }
         vec![f.into_geometry()]
     }
@@ -354,7 +295,7 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
         }
         match cursor.position_in(bounds) {
             Some(p) if p.x < NAME_W && p.y > RULER_H => Interaction::Pointer,
-            Some(_) => Interaction::Crosshair,
+            Some(_) => Interaction::Grab,
             None => Interaction::default(),
         }
     }
@@ -363,8 +304,7 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
 impl Waveform<'_> {
     fn draw_name(&self, f: &mut Frame, s: &TraceSignal, y0: f32) {
         let cy = y0 + ROW_H / 2.0;
-        let at = self.view.cursor_a.unwrap_or(self.now);
-        let value = s.value_at(at).map(|v| short_value(v, s.radix)).unwrap_or_default();
+        let value = s.value_at(self.now).map(|v| short_value(v, s.radix)).unwrap_or_default();
         f.fill_text(Text {
             content: "×".into(),
             position: Point::new(9.0, cy),

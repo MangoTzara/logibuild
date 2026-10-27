@@ -53,7 +53,6 @@ icons! {
     Check => r##"<path d="m3 8.5 3 3 7-7" stroke-width="1.5"/>"##,
     ChevronDown => r##"<path d="m4 6 4 4 4-4"/>"##,
     ChevronRight => r##"<path d="m6 4 4 4-4 4"/>"##,
-    ChevronLeft => r##"<path d="M10 4 6 8l4 4"/>"##,
     Export => r##"<path d="M8 10.5v-9M5 4.5l3-3 3 3"/><path d="M2.5 9.5v5h11v-5"/>"##,
     Search => r##"<circle cx="6.5" cy="6.5" r="4"/><path d="m9.5 9.5 5 5"/>"##,
 }

@@ -157,11 +157,8 @@ In the panel:
 
 | Action | Effect |
 | --- | --- |
-| Left-click | place cursor A |
-| Right-click | place cursor B; the header shows A, B and Δ |
 | Drag, Shift+wheel | scroll in time |
 | Ctrl+wheel | zoom around the mouse |
-| ‹ / › (previous / next edge) | move cursor A to the previous/next change (of the selected signal, or of any) |
 | Fit | show the whole recorded history |
 | Follow | keep the current time in view while running |
 | Click a name | select the signal |
