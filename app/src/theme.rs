@@ -445,18 +445,17 @@ pub fn item(selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style 
     }
 }
 
-/// Accent text, for an action inside a list.
-pub fn link(t: &Theme, status: button::Status) -> button::Style {
-    let mut s = tool(t, status);
-    if status != button::Status::Disabled {
-        s.text_color = colors().link;
+/// Text acting as a button, without background or frame: `normal`, turning
+/// to `hover` under the mouse.
+pub fn bare(normal: Color, hover: Color) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let fg = match status {
+            button::Status::Hovered | button::Status::Pressed => hover,
+            button::Status::Disabled => colors().disabled,
+            button::Status::Active => normal,
+        };
+        style(None, fg, Color::TRANSPARENT, 0.0)
     }
-    s
-}
-
-/// The entry currently shown: accent text, no background.
-pub fn current(_: &Theme, _: button::Status) -> button::Style {
-    style(None, colors().link, Color::TRANSPARENT, ITEM_RADIUS)
 }
 
 /// Content of a button: an icon, then a label when `label` is not empty.

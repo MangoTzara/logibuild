@@ -103,33 +103,43 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 // The main circuit (★) is never placeable; others only when
                 // they would not contain the shown circuit.
                 let tip = if !shown && i > 0 && !placeable { "(recursive)" } else { "" };
-                // Right column, right aligned: "Open", or "Editing" for the shown circuit.
+                // Right column, right aligned: "Open", or "Editing" for the shown
+                // circuit. Inside the row, so that the whole row lights up.
                 let side: Element<Message> = if shown {
                     // A state, not an action: grey and without a badge.
-                    container(text("Editing").size(theme::fs(12.0)).color(theme::colors().muted)).padding([3, 6]).into()
+                    text("Editing").size(theme::fs(12.0)).color(theme::colors().muted).into()
                 } else {
                     button(text("Open").size(theme::fs(12.0)))
                         .on_press(Message::OpenCircuit(name.clone()))
-                        .padding([3, 6])
-                        .style(theme::link)
+                        .padding([0, 2])
+                        .style(theme::bare(theme::colors().link, theme::colors().accent))
                         .into()
                 };
-                // The shown circuit cannot be placed in itself: its name is only
-                // coloured, unlike the highlight of the subcircuit being placed.
-                let pick = theme::item(selected);
-                let style = move |t: &iced::Theme, st| if shown { theme::current(t, st) } else { pick(t, st) };
-                let pick: Element<Message> = button(
-                    row![
-                        text(label).size(theme::fs(13.0)),
-                        text(tip).size(theme::fs(12.0)).color(theme::colors().muted)
-                    ]
-                    .spacing(6),
-                )
-                .on_press_maybe(placeable.then(|| Message::PickSubcircuit(name.clone())))
-                .width(Fill)
-                .padding(ENTRY)
-                .style(style)
-                .into();
+                let content = row![
+                    text(label).size(theme::fs(13.0)),
+                    text(tip).size(theme::fs(12.0)).color(theme::colors().muted),
+                    Space::new().width(Fill),
+                    container(side).width(theme::fs(SIDE_W)).align_right(theme::fs(SIDE_W)),
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center);
+                let pick: Element<Message> = if placeable {
+                    button(content)
+                        .on_press(Message::PickSubcircuit(name.clone()))
+                        .width(Fill)
+                        .padding(ENTRY)
+                        .style(theme::item(selected))
+                        .into()
+                } else {
+                    // Not a disabled button: a button shows the hand only for
+                    // itself, never for the “Open” inside it.
+                    let color = if shown { theme::colors().link } else { theme::colors().disabled };
+                    container(content)
+                        .width(Fill)
+                        .padding(ENTRY)
+                        .style(move |_| container::Style { text_color: Some(color), ..Default::default() })
+                        .into()
+                };
                 // Say why a circuit cannot be placed here.
                 let pick = match refusal {
                     Some(why) if !shown => tooltip(
@@ -143,10 +153,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
                     .into(),
                     _ => pick,
                 };
-                list = list.push(
-                    row![pick, container(side).width(theme::fs(SIDE_W)).align_right(theme::fs(SIDE_W))]
-                        .align_y(Alignment::Center),
-                );
+                list = list.push(pick);
             }
         }
     }
