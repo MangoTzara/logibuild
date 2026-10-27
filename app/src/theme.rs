@@ -459,43 +459,6 @@ pub fn current(_: &Theme, _: button::Status) -> button::Style {
     style(None, colors().link, Color::TRANSPARENT, ITEM_RADIUS)
 }
 
-/// Where a button sits in a segmented control.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Segment {
-    First,
-    Middle,
-    Last,
-}
-
-/// Frame around the buttons of a segmented control.
-pub fn segmented(_: &Theme) -> container::Style {
-    let c = colors();
-    container::Style {
-        background: Some(Background::Color(c.button)),
-        border: Border { color: c.frame, width: 1.0, radius: RADIUS.into() },
-        shadow: Shadow { color: shade(0.07), offset: Vector::new(0.0, 1.0), blur_radius: 1.0 },
-        ..Default::default()
-    }
-}
-
-/// A button of a segmented control: no outline of its own, tinted on hover,
-/// rounded only on the outer corners of the group.
-pub fn segment(at: Segment) -> impl Fn(&Theme, button::Status) -> button::Style {
-    move |t, status| {
-        let r = RADIUS - 1.0;
-        let mut s = tool(t, status);
-        s.border = Border {
-            radius: match at {
-                Segment::First => iced::border::left(r),
-                Segment::Middle => 0.0.into(),
-                Segment::Last => iced::border::right(r),
-            },
-            ..Default::default()
-        };
-        s
-    }
-}
-
 /// Content of a button: an icon, then a label when `label` is not empty.
 pub fn icon_label<'a, M: 'a>(i: icons::Icon, label: &str, enabled: bool) -> Element<'a, M> {
     let color = if enabled { colors().text } else { colors().disabled };

@@ -22,10 +22,9 @@ use crate::autoroute;
 use crate::canvas::{CircuitCache, Editor, EditorEvent, Selection, Tool, orient_wire};
 use crate::icons::{self, Emblem, Icon};
 use crate::routing;
-use crate::settings::{Scheme, Settings, TEXT_SIZE_RANGE, TEXT_SIZE_STEP};
+use crate::settings::{Scheme, Settings, TEXT_SIZE_RANGE, TEXT_SIZES};
 use crate::shapes::View;
 use crate::theme;
-use crate::theme::Segment;
 use crate::waveform::{self, WaveMsg, WaveView, Waveform};
 use crate::{palette, props};
 
@@ -2049,8 +2048,15 @@ impl App {
     }
 
     fn menu_overlay(&self, m: Menu) -> Element<'_, Message> {
-        let entry = |icon: Option<Icon>, label: &str, key: &str, msg: Message, enabled: bool| -> Element<Message> {
-            let color = if enabled { theme::colors().text } else { theme::colors().disabled };
+        // An entry with an icon of the given colour (the text colour when `None`).
+        let tinted = |icon: Option<Icon>,
+                      tint: Option<iced::Color>,
+                      label: &str,
+                      key: &str,
+                      msg: Message,
+                      enabled: bool|
+         -> Element<Message> {
+            let color = if enabled { tint.unwrap_or(theme::colors().text) } else { theme::colors().disabled };
             let icon: Element<Message> = match icon {
                 Some(i) => icons::icon(i, 16.0, color).into(),
                 None => Space::new().width(16).into(),
@@ -2074,8 +2080,22 @@ impl App {
             .style(theme::item(false))
             .into()
         };
-        // Checkable entries show a check mark in the icon column.
-        let toggle = |label: &str, on: bool, msg: Message| entry(on.then_some(Icon::Check), label, "", msg, true);
+        let entry = |icon: Option<Icon>, label: &str, key: &str, msg: Message, enabled: bool| {
+            tinted(icon, None, label, key, msg, enabled)
+        };
+        // Checkable entries show a check box, choices among several a radio
+        // button, in the icon column.
+        let mark = |on: bool, off: Icon, checked: Icon| {
+            if on { (checked, theme::colors().accent) } else { (off, theme::colors().muted) }
+        };
+        let toggle = |label: &str, on: bool, msg: Message| {
+            let (i, c) = mark(on, Icon::CheckOff, Icon::CheckOn);
+            tinted(Some(i), Some(c), label, "", msg, true)
+        };
+        let choice = |label: &str, on: bool, msg: Message| {
+            let (i, c) = mark(on, Icon::RadioOff, Icon::RadioOn);
+            tinted(Some(i), Some(c), label, "", msg, true)
+        };
         let sep = || -> Element<Message> { container(theme::hline()).padding([4, 6]).into() };
         let sel = !self.selection.comps.is_empty();
         let transform = sel || matches!(self.tool, Tool::Place { .. });
@@ -2154,62 +2174,21 @@ impl App {
                 };
                 let mut items = vec![heading("Color scheme")];
                 for scheme in Scheme::ALL {
-                    items.push(toggle(scheme.label(), self.settings.scheme == scheme, Message::SetScheme(scheme)));
+                    items.push(choice(scheme.label(), self.settings.scheme == scheme, Message::SetScheme(scheme)));
                 }
                 items.push(sep());
-                // Segmented − value + control beside the title; the value
-                // resets to the default when clicked.
+                items.push(heading("Text size"));
                 let size = self.settings.text_size;
-                let height = theme::fs(28.0);
-                let step = |i: Icon, at: Segment, tip: &str, to: u32, enabled: bool| {
-                    theme::tip(
-                        button(container(theme::icon_label(i, "", enabled)).center(Fill))
-                            .on_press_maybe(enabled.then_some(Message::SetTextSize(to)))
-                            .width(height + 4.0)
-                            .height(Fill)
-                            .padding(0)
-                            .style(theme::segment(at)),
-                        tip,
-                    )
-                };
-                let value = button(
-                    container(text(format!("{size}%")).size(theme::fs(13.0)).font(theme::FONT_MEDIUM)).center(Fill),
-                )
-                .on_press_maybe((size != 100).then_some(Message::SetTextSize(100)))
-                .width(theme::fs(60.0))
-                .height(Fill)
-                .padding(0)
-                .style(theme::segment(Segment::Middle));
-                let control = container(
-                    row![
-                        step(
-                            Icon::Remove,
-                            Segment::First,
-                            "Smaller",
-                            size.saturating_sub(TEXT_SIZE_STEP),
-                            size > *TEXT_SIZE_RANGE.start()
-                        ),
-                        theme::vline(),
-                        theme::tip(value, "Reset to 100%"),
-                        theme::vline(),
-                        step(Icon::Add, Segment::Last, "Larger", size + TEXT_SIZE_STEP, size < *TEXT_SIZE_RANGE.end()),
-                    ]
-                    .height(height),
-                )
-                .padding(1)
-                .style(theme::segmented);
-                items.push(
-                    container(
-                        row![
-                            text("Text size").size(theme::fs(12.0)).color(theme::colors().muted),
-                            Space::new().width(Fill),
-                            control,
-                        ]
-                        .align_y(Alignment::Center),
-                    )
-                    .padding(Padding { top: 4.0, right: 6.0, bottom: 6.0, left: 8.0 })
-                    .into(),
-                );
+                let mut sizes = TEXT_SIZES.to_vec();
+                // A size set otherwise (older settings) is listed too.
+                if !sizes.contains(&size) {
+                    sizes.push(size);
+                    sizes.sort();
+                }
+                for n in sizes {
+                    let label = if n == 100 { "100% (default)".to_string() } else { format!("{n}%") };
+                    items.push(choice(&label, n == size, Message::SetTextSize(n)));
+                }
                 items
             }
         };

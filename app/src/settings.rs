@@ -35,8 +35,8 @@ impl Scheme {
 
 /// Text sizes accepted, in percent of the default.
 pub const TEXT_SIZE_RANGE: std::ops::RangeInclusive<u32> = 50..=200;
-/// Step of the − / + buttons, in percent.
-pub const TEXT_SIZE_STEP: u32 = 10;
+/// Text sizes offered in the settings menu, in percent.
+pub const TEXT_SIZES: [u32; 6] = [90, 100, 110, 125, 150, 175];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Settings {

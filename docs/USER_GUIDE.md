@@ -212,8 +212,7 @@ can embed its subcircuits, or reference folders of `.lbc` files with the `librar
 
 The **Settings** menu chooses the colour scheme — **Follow system** (the default: light or
 dark as the desktop is, updated when it changes), **Light** or **Dark** — and the
-text size, with the − / + buttons in steps of 10% (50–200%; click the value to go back to
-100%). The choices are kept in
+text size, from 90% to 175% (100% is the default). The choices are kept in
 `$XDG_CONFIG_HOME/logibuild/settings` (usually `~/.config/logibuild/settings`).
 
 ## Keyboard shortcuts

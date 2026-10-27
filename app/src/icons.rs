@@ -48,13 +48,15 @@ icons! {
     Fit => r##"<path d="M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4"/><path d="M5.5 5.5h5v5h-5z"/>"##,
     Wave => r##"<path d="M1 11.5h3.5v-7h4v7h3v-7H15"/>"##,
     Add => r##"<path d="M8 3v10M3 8h10"/>"##,
-    Remove => r##"<path d="M3 8h10"/>"##,
     Close => r##"<path d="m4 4 8 8M12 4l-8 8"/>"##,
-    Check => r##"<path d="m3 8.5 3 3 7-7" stroke-width="1.5"/>"##,
     ChevronDown => r##"<path d="m4 6 4 4 4-4"/>"##,
     ChevronRight => r##"<path d="m6 4 4 4-4 4"/>"##,
     Export => r##"<path d="M8 10.5v-9M5 4.5l3-3 3 3"/><path d="M2.5 9.5v5h11v-5"/>"##,
     Search => r##"<circle cx="6.5" cy="6.5" r="4"/><path d="m9.5 9.5 5 5"/>"##,
+    CheckOff => r##"<rect x="2.5" y="2.5" width="11" height="11" rx="2"/>"##,
+    CheckOn => r##"<rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="m5 8.2 2 2 4-4.2" stroke-width="1.5" stroke-linecap="round"/>"##,
+    RadioOff => r##"<circle cx="8" cy="8" r="5.5"/>"##,
+    RadioOn => r##"<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2.5" fill="#000" stroke="none"/>"##,
 }
 
 /// An icon tinted with `color`, `size` pixels square.
