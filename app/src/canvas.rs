@@ -168,7 +168,8 @@ pub struct EditorState {
     last_click: Option<(Instant, Point)>,
     modifiers: keyboard::Modifiers,
     grid: Cache,
-    grid_key: Cell<Option<(View, Size, bool)>>,
+    /// View, size, dark scheme and grid shown when the grid was drawn.
+    grid_key: Cell<Option<(View, Size, bool, bool)>>,
     statics: Cache,
     static_key: Cell<Option<(View, Size, u64)>>,
 }
@@ -373,7 +374,7 @@ impl Editor<'_> {
     }
 
     fn draw_grid(&self, state: &EditorState, renderer: &Renderer, bounds: Rectangle) -> Geometry {
-        let key = (self.view, bounds.size(), theme::is_dark());
+        let key = (self.view, bounds.size(), theme::is_dark(), self.show_grid);
         if state.grid_key.get() != Some(key) {
             state.grid.clear();
             state.grid_key.set(Some(key));
