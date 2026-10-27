@@ -2427,7 +2427,7 @@ impl App {
                     let s = &self.settings;
                     items.push(sep());
                     items.push(heading("Features"));
-                    items.push(toggle("HDL: VHDL and Verilog", s.hdl, Message::SetHdlEnabled(!s.hdl)));
+                    items.push(toggle("Enable HDL", s.hdl, Message::SetHdlEnabled(!s.hdl)));
                     if s.hdl {
                         items.push(toggle(
                             "Synthesize when a source is saved",

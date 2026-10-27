@@ -202,11 +202,11 @@ Verilog). The simplest way to get both, with the GHDL plugin for Yosys, is the
 [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases) (Linux, macOS,
 Windows).
 
-HDL support is off by default: turn it on with **Settings → Features → HDL: VHDL and
-Verilog**. This adds the **HDL** menu and the **HDL view**: **HDL ›**, at the top right of the
-canvas (or **HDL → HDL view**), shows it in place of the canvas, the side panels and the
-waveform, with **Compile** and **Synthesize** at its top; **‹ Circuit** goes back. Turning it off
-again only hides them: circuits synthesized from HDL stay in the project and still simulate.
+HDL support is off by default: turn it on with **Settings → Features → Enable HDL**.
+This adds the **HDL** menu and the **HDL view**: **HDL ›**, at the top right of the canvas
+(or **HDL → HDL view**), shows it in place of the canvas, the side panels and the waveform,
+with **Compile** and **Synthesize** at its top; **‹ Circuit** goes back. Turning it off again
+only hides them: circuits synthesized from HDL stay in the project and still simulate.
 
 ### Sources
 
