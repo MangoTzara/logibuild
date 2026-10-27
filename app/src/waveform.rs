@@ -15,7 +15,11 @@ use lb_core::value::{Radix, Signal};
 
 use crate::theme;
 
+/// Width of the column of names, by default and at least.
 pub const NAME_W: f32 = 190.0;
+const MIN_NAME_W: f32 = 110.0;
+/// Distance from the column edge within which it can be dragged.
+const GRIP: f32 = 4.0;
 pub const RULER_H: f32 = 22.0;
 pub const ROW_H: f32 = 28.0;
 /// Zoom limits, in pixels per tick.
@@ -32,6 +36,8 @@ pub struct WaveView {
     pub start: f64,
     pub follow: bool,
     pub selected: Option<usize>,
+    /// Width of the column of names, set by dragging its edge.
+    pub names_w: f32,
     pub size: Size,
     /// Time span requested before the panel was laid out.
     pending_span: Option<f64>,
@@ -45,6 +51,7 @@ impl Default for WaveView {
             start: 0.0,
             follow: true,
             selected: None,
+            names_w: NAME_W,
             size: Size::ZERO,
             pending_span: None,
         }
@@ -53,7 +60,7 @@ impl Default for WaveView {
 
 impl WaveView {
     pub fn wave_width(&self) -> f64 {
-        (self.size.width - NAME_W).max(1.0) as f64
+        (self.size.width - self.names_w).max(1.0) as f64
     }
 
     pub fn visible_ticks(&self) -> f64 {
@@ -61,11 +68,11 @@ impl WaveView {
     }
 
     pub fn time_at(&self, x: f32) -> f64 {
-        self.start + (x - NAME_W) as f64 / self.zoom
+        self.start + (x - self.names_w) as f64 / self.zoom
     }
 
     pub fn x_of(&self, t: f64) -> f32 {
-        NAME_W + ((t - self.start) * self.zoom) as f32
+        self.names_w + ((t - self.start) * self.zoom) as f32
     }
 
     /// Keeps the current time in view when following.
@@ -86,13 +93,19 @@ impl WaveView {
     /// Zooms so that `ticks` fill the visible width, keeping the right edge
     /// in place.
     pub fn set_span(&mut self, ticks: f64) {
-        if self.size.width <= NAME_W {
+        if self.size.width <= self.names_w {
             self.pending_span = Some(ticks);
             return;
         }
         let end = self.start + self.visible_ticks();
         self.zoom = (self.wave_width() / ticks).clamp(MIN_ZOOM, MAX_ZOOM);
         self.start = (end - self.visible_ticks()).max(0.0);
+    }
+
+    /// Sets the width of the column of names, leaving room for the waves.
+    pub fn set_names_width(&mut self, w: f32) {
+        let max = (self.size.width * 0.7).max(MIN_NAME_W);
+        self.names_w = w.clamp(MIN_NAME_W, max);
     }
 
     pub fn zoom_at(&mut self, factor: f64, anchor_t: f64) {
@@ -112,11 +125,16 @@ impl WaveView {
 #[derive(Debug, Clone)]
 pub enum WaveMsg {
     Resized(Size),
+    /// The edge of the column of names was dragged to this x.
+    NamesWidth(f32),
     Select(usize),
     CycleRadix(usize),
     Remove(usize),
     Scroll(f64),
-    Zoom { factor: f64, anchor: f64 },
+    Zoom {
+        factor: f64,
+        anchor: f64,
+    },
     ToggleFollow,
     Fit,
     ExportCsv,
@@ -133,6 +151,8 @@ pub struct Waveform<'a> {
 #[derive(Default)]
 pub struct WaveState {
     drag: Option<(Point, f64, bool)>,
+    /// The edge of the column of names is being dragged.
+    resizing: bool,
     modifiers: keyboard::Modifiers,
 }
 
@@ -173,26 +193,34 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
             Event::Keyboard(keyboard::Event::ModifiersChanged(m)) => state.modifiers = *m,
             Event::Mouse(mouse::Event::ButtonPressed(b)) => {
                 let p = pos?;
-                if p.y > RULER_H && p.x < NAME_W {
+                if self.on_edge(p) {
+                    state.resizing = true;
+                    return Some(canvas::Action::capture());
+                }
+                let names_w = self.view.names_w;
+                if p.y > RULER_H && p.x < names_w {
                     let row = ((p.y - RULER_H) / ROW_H) as usize;
                     if row < n {
                         // Radix chip at the right of the name column, remove "×" at the left.
                         if p.x < 18.0 {
                             return Some(canvas::Action::publish(WaveMsg::Remove(row)).and_capture());
                         }
-                        if p.x > NAME_W - 46.0 {
+                        if p.x > names_w - 46.0 {
                             return Some(canvas::Action::publish(WaveMsg::CycleRadix(row)).and_capture());
                         }
                         return Some(canvas::Action::publish(WaveMsg::Select(row)).and_capture());
                     }
                     return None;
                 }
-                if p.x >= NAME_W && matches!(b, mouse::Button::Left | mouse::Button::Middle) {
+                if p.x >= names_w && matches!(b, mouse::Button::Left | mouse::Button::Middle) {
                     state.drag = Some((p, self.view.start, false));
                     return Some(canvas::Action::capture());
                 }
             }
-            Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            Event::Mouse(mouse::Event::CursorMoved { position }) => {
+                if state.resizing {
+                    return Some(canvas::Action::publish(WaveMsg::NamesWidth(position.x - bounds.x)).and_capture());
+                }
                 if let (Some((p0, start, moved)), Some(p)) = (&mut state.drag, cursor.position_in(bounds).or(pos)) {
                     let dx = p.x - p0.x;
                     if dx.abs() > 3.0 || *moved {
@@ -202,7 +230,10 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
                     }
                 }
             }
-            Event::Mouse(mouse::Event::ButtonReleased(_)) => state.drag = None,
+            Event::Mouse(mouse::Event::ButtonReleased(_)) => {
+                state.drag = None;
+                state.resizing = false;
+            }
             Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                 let p = pos?;
                 let (dx, dy) = match delta {
@@ -210,7 +241,7 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
                     ScrollDelta::Pixels { x, y } => (*x, *y),
                 };
                 if state.modifiers.control() {
-                    let anchor = self.view.time_at(p.x.max(NAME_W));
+                    let anchor = self.view.time_at(p.x.max(self.view.names_w));
                     let msg = WaveMsg::Zoom { factor: 1.2f64.powf(dy as f64 / 40.0), anchor };
                     return Some(canvas::Action::publish(msg).and_capture());
                 }
@@ -227,7 +258,7 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
 
     fn draw(
         &self,
-        _state: &WaveState,
+        state: &WaveState,
         renderer: &Renderer,
         _theme: &Theme,
         bounds: Rectangle,
@@ -237,7 +268,7 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
         let size = bounds.size();
         f.fill_rectangle(Point::ORIGIN, size, theme::colors().view);
         let v = self.view;
-        let wave_x0 = NAME_W;
+        let wave_x0 = v.names_w;
 
         // Ruler.
         f.fill_rectangle(Point::ORIGIN, Size::new(size.width, RULER_H), theme::colors().view_alt);
@@ -277,7 +308,8 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
         }
 
         // Separator and now marker.
-        f.fill_rectangle(Point::new(NAME_W - 1.0, 0.0), Size::new(1.0, size.height), theme::colors().separator);
+        let edge = if state.resizing { theme::colors().accent } else { theme::colors().separator };
+        f.fill_rectangle(Point::new(v.names_w - 1.0, 0.0), Size::new(1.0, size.height), edge);
         let now_x = v.x_of(self.now as f64);
         if now_x >= wave_x0 && now_x <= size.width {
             f.fill_rectangle(
@@ -293,8 +325,11 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
         if state.drag.is_some_and(|d| d.2) {
             return Interaction::Grabbing;
         }
+        if state.resizing || cursor.position_in(bounds).is_some_and(|p| self.on_edge(p)) {
+            return Interaction::ResizingHorizontally;
+        }
         match cursor.position_in(bounds) {
-            Some(p) if p.x < NAME_W && p.y > RULER_H => Interaction::Pointer,
+            Some(p) if p.x < self.view.names_w && p.y > RULER_H => Interaction::Pointer,
             Some(_) => Interaction::Grab,
             None => Interaction::default(),
         }
@@ -302,6 +337,11 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
 }
 
 impl Waveform<'_> {
+    /// `p` is on the edge between the names and the waves.
+    fn on_edge(&self, p: Point) -> bool {
+        (p.x - self.view.names_w).abs() <= GRIP
+    }
+
     fn draw_name(&self, f: &mut Frame, s: &TraceSignal, y0: f32) {
         let cy = y0 + ROW_H / 2.0;
         let value = s.value_at(self.now).map(|v| short_value(v, s.radix)).unwrap_or_default();
@@ -315,8 +355,8 @@ impl Waveform<'_> {
             align_y: Vertical::Center,
             ..Default::default()
         });
-        // Fewer characters fit with a larger text.
-        let max = (16.0 * 13.0 / theme::fs(13.0)) as usize;
+        // Fewer characters fit with a larger text, more in a wider column.
+        let max = ((16.0 * 13.0 / theme::fs(13.0)) * (self.view.names_w / NAME_W)) as usize;
         let mut name = s.name.clone();
         if name.chars().count() > max {
             name = format!(
@@ -335,7 +375,7 @@ impl Waveform<'_> {
         });
         f.fill_text(Text {
             content: value,
-            position: Point::new(NAME_W - 52.0, cy),
+            position: Point::new(self.view.names_w - 52.0, cy),
             color: theme::colors().link,
             size: theme::fs(12.0).into(),
             font: theme::FONT,
@@ -343,11 +383,12 @@ impl Waveform<'_> {
             align_y: Vertical::Center,
             ..Default::default()
         });
-        let chip = Path::rounded_rectangle(Point::new(NAME_W - 44.0, cy - 8.0), Size::new(38.0, 16.0), 4.0.into());
+        let chip =
+            Path::rounded_rectangle(Point::new(self.view.names_w - 44.0, cy - 8.0), Size::new(38.0, 16.0), 4.0.into());
         f.fill(&chip, theme::colors().hover);
         f.fill_text(Text {
             content: if s.width == 1 { "Bit".into() } else { s.radix.to_string() },
-            position: Point::new(NAME_W - 25.0, cy),
+            position: Point::new(self.view.names_w - 25.0, cy),
             color: theme::colors().muted,
             size: theme::fs(10.0).into(),
             font: theme::FONT,
@@ -369,7 +410,7 @@ impl Waveform<'_> {
         let first = samples.partition_point(|(t, _)| (*t as f64) <= v.start).saturating_sub(1);
         let end_time = self.now as f64;
         let mut i = first;
-        let clamp_x = |x: f32| x.clamp(NAME_W, right);
+        let clamp_x = |x: f32| x.clamp(v.names_w, right);
         while i < samples.len() {
             let (t, val) = samples[i];
             if t as f64 > t_end {
@@ -414,7 +455,7 @@ impl Waveform<'_> {
                     );
                 }
                 // Vertical edge from the previous value.
-                if i > 0 && (v.x_of(t as f64)) >= NAME_W {
+                if i > 0 && (v.x_of(t as f64)) >= v.names_w {
                     f.fill_rectangle(Point::new(x0 - 0.75, hi), Size::new(1.5, lo - hi), theme::colors().wire_low);
                 }
             } else {

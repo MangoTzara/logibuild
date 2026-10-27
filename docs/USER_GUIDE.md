@@ -161,6 +161,7 @@ In the panel:
 | Ctrl+wheel | zoom around the mouse |
 | Fit | show the whole recorded history |
 | Follow | keep the current time in view while running |
+| Drag the line after the names | widen or narrow the column of names |
 | Click a name | select the signal |
 | Click the radix chip | cycle bin / hex / dec / signed |
 | × next to a name | remove the signal |

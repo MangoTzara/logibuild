@@ -1715,6 +1715,7 @@ impl App {
         let now = self.sim().map_or(0, |s| s.time());
         match msg {
             WaveMsg::Resized(size) => self.wave.resize(size),
+            WaveMsg::NamesWidth(w) => self.wave.set_names_width(w),
             WaveMsg::Select(i) => self.wave.selected = Some(i),
             WaveMsg::CycleRadix(i) => {
                 if let Some(sim) = self.sim_mut()

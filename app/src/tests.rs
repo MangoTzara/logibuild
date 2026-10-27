@@ -450,6 +450,23 @@ fn the_main_circuit_is_never_a_subcircuit() {
 }
 
 #[test]
+fn the_column_of_signal_names_can_be_resized() {
+    use crate::waveform::{NAME_W, WaveMsg};
+    let mut app = app();
+    let _ = app.update(Message::Wave(WaveMsg::Resized(iced::Size::new(1000.0, 200.0))));
+    let before = app.wave.visible_ticks();
+    let _ = app.update(Message::Wave(WaveMsg::NamesWidth(300.0)));
+    assert_eq!(app.wave.names_w, 300.0);
+    assert!(app.wave.visible_ticks() < before, "less room for the waves");
+    assert_eq!(app.wave.x_of(app.wave.start), 300.0, "waves start at the edge");
+    // Kept between a minimum and most of the panel.
+    let _ = app.update(Message::Wave(WaveMsg::NamesWidth(10.0)));
+    assert!(app.wave.names_w > 100.0 && app.wave.names_w < NAME_W);
+    let _ = app.update(Message::Wave(WaveMsg::NamesWidth(5000.0)));
+    assert_eq!(app.wave.names_w, 700.0);
+}
+
+#[test]
 fn the_waveform_shows_ten_seconds_at_the_current_speed() {
     use crate::app::Speed;
     use crate::waveform::{NAME_W, WaveMsg};
