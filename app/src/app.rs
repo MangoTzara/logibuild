@@ -314,6 +314,12 @@ pub enum Message {
     StartResize(Split),
     ResizeMove(Point),
     ResizeEnd,
+    // Agents
+    #[cfg(feature = "mcp")]
+    Mcp(crate::mcp::Event),
+    /// A screenshot an agent asked for (JSON-RPC id, where to answer).
+    #[cfg(feature = "mcp")]
+    McpScreenshot(serde_json::Value, crate::mcp::Reply, Option<window::Screenshot>),
 }
 
 pub struct App {
@@ -377,6 +383,9 @@ pub struct App {
     system_dark: bool,
     #[cfg(feature = "hdl")]
     pub hdl: crate::hdl::Hdl,
+    /// The server agents connect to, when started with `--mcp`.
+    #[cfg(feature = "mcp")]
+    pub mcp: Option<crate::mcp::Server>,
 }
 
 impl App {
@@ -450,6 +459,8 @@ impl App {
             system_dark: false,
             #[cfg(feature = "hdl")]
             hdl: crate::hdl::Hdl::default(),
+            #[cfg(feature = "mcp")]
+            mcp: None,
         };
         app.apply_settings();
         app.refresh();
@@ -522,7 +533,7 @@ impl App {
         self.sims.get(&self.loc().root).map(|s| &s.sim)
     }
 
-    fn sim_mut(&mut self) -> Option<&mut Simulator> {
+    pub(crate) fn sim_mut(&mut self) -> Option<&mut Simulator> {
         let root = self.loc().root.clone();
         self.sims.get_mut(&root).map(|s| &mut s.sim)
     }
@@ -632,7 +643,8 @@ impl App {
         c
     }
 
-    pub(crate) fn exec(&mut self, mut cmd: Command) {
+    /// Runs an edit; returns whether it changed the project.
+    pub(crate) fn exec(&mut self, mut cmd: Command) -> bool {
         // Circuits synthesized from HDL change only with their sources.
         let edits = cmd.ops.iter().any(|op| {
             matches!(
@@ -641,13 +653,15 @@ impl App {
             )
         });
         if edits && self.project.is_hdl(&cmd.circuit) {
-            return;
+            return false;
         }
         self.tidy_wires(&mut cmd);
-        if self.history.execute(&mut self.project, cmd) {
+        let changed = self.history.execute(&mut self.project, cmd);
+        if changed {
             self.generation += 1;
             self.refresh();
         }
+        changed
     }
 
     /// Adds to `cmd` the tidying of the waypoints of the wires attached to
@@ -802,7 +816,7 @@ impl App {
         crate::hdl::project_loaded(self);
     }
 
-    fn save_to(&mut self, path: PathBuf) -> bool {
+    pub(crate) fn save_to(&mut self, path: PathBuf) -> bool {
         let path = if path.extension().is_none() { path.with_extension(io::EXTENSION) } else { path };
         #[cfg(feature = "hdl")]
         {
@@ -943,6 +957,35 @@ impl App {
         let time = sim.time();
         sim.trace.add(name.clone(), net, value, time, Some((inst.into(), comp, pin)));
         self.wave.visible = true;
+    }
+
+    /// Settles the simulation now rather than over the next frames.
+    #[cfg_attr(not(feature = "mcp"), allow(dead_code))]
+    pub(crate) fn settle(&mut self) {
+        let Some(sim) = self.sim_mut() else { return };
+        match sim.settle(1_000_000) {
+            Ok(settled) => self.pending_settle = !settled,
+            Err(_) => self.report_osc(),
+        }
+    }
+
+    #[cfg(feature = "mcp")]
+    fn mcp_event(&mut self, event: crate::mcp::Event) -> Task<Message> {
+        use crate::mcp::Event;
+        match event {
+            Event::Listening => {}
+            Event::Failed(e) => {
+                self.warn(format!("Cannot listen for agents: {e}"));
+                self.mcp = None;
+            }
+            Event::Connected(on) => {
+                if let Some(server) = &mut self.mcp {
+                    server.connected = on;
+                }
+            }
+            Event::Call(call) => return crate::mcp::handle(self, call),
+        }
+        Task::none()
     }
 
     fn report_osc(&mut self) {
@@ -1183,6 +1226,10 @@ impl App {
                 self.drafts.insert("cfg.trace".into(), s);
             }
             Message::Frame(now) => self.frame(now),
+            #[cfg(feature = "mcp")]
+            Message::Mcp(event) => return self.mcp_event(event),
+            #[cfg(feature = "mcp")]
+            Message::McpScreenshot(id, reply, shot) => crate::mcp::screenshot_taken(id, reply, shot),
 
             // ---- view
             Message::FitView => self.fit_view(),
@@ -1520,6 +1567,10 @@ impl App {
         #[cfg(feature = "hdl")]
         if let Message::Hdl(m) = message {
             return matches!(m, crate::hdl::Msg::Poll | crate::hdl::Msg::Done(..));
+        }
+        #[cfg(feature = "mcp")]
+        if matches!(message, Message::Mcp(_) | Message::McpScreenshot(..)) {
+            return true;
         }
         let _ = message;
         false
@@ -2051,6 +2102,10 @@ impl App {
         }
         #[cfg(feature = "hdl")]
         subs.push(crate::hdl::subscription(self));
+        #[cfg(feature = "mcp")]
+        if let Some(server) = &self.mcp {
+            subs.push(crate::mcp::subscription(&server.name));
+        }
         if self.commands.is_some() {
             // Also the keys the focused search field captures: Escape would
             // only unfocus it.
@@ -2738,6 +2793,15 @@ impl App {
         Vec::new()
     }
 
+    /// "Agent" in the status bar while an agent is connected.
+    fn agent_info(&self) -> &'static str {
+        #[cfg(feature = "mcp")]
+        if self.mcp.as_ref().is_some_and(|s| s.connected) {
+            return "Agent";
+        }
+        ""
+    }
+
     fn statusbar(&self) -> Element<'_, Message> {
         let sim_info = match self.sim() {
             Some(s) => {
@@ -2764,6 +2828,7 @@ impl App {
                 text(sim_info).size(theme::fs(theme::SMALL)).color(theme::colors().muted),
                 theme::vline(),
                 text(zoom).size(theme::fs(theme::SMALL)).color(theme::colors().muted),
+                text(self.agent_info()).size(theme::fs(theme::SMALL)).color(theme::colors().link),
             ]
             .spacing(12)
             .height(theme::fs(14.0))
