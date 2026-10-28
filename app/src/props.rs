@@ -228,7 +228,7 @@ pub fn apply(app: &mut App, edit: Edit) -> Option<Command> {
 /// forms.
 fn field<'a>(label: &str, widget: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
     row![
-        text(format!("{label}:")).size(theme::fs(13.0)).width(theme::fs(LABEL_W)).align_x(Alignment::End),
+        text(format!("{label}:")).size(theme::fs(theme::BODY)).width(theme::fs(LABEL_W)).align_x(Alignment::End),
         container(widget).width(Fill)
     ]
     .spacing(8)
@@ -243,7 +243,7 @@ const LABEL_W: f32 = 104.0;
 fn section<'a>(title: &str) -> Element<'a, Message> {
     column![
         Space::new().height(8),
-        row![text(title.to_string()).size(theme::fs(13.0)).font(theme::FONT_MEDIUM), theme::hline()]
+        row![text(title.to_string()).size(theme::fs(theme::BODY)).font(theme::FONT_MEDIUM), theme::hline()]
             .spacing(8)
             .align_y(Alignment::Center),
     ]
@@ -251,7 +251,7 @@ fn section<'a>(title: &str) -> Element<'a, Message> {
 }
 
 fn title<'a>(t: impl ToString) -> Element<'a, Message> {
-    text(t.to_string()).size(theme::fs(16.0)).font(theme::FONT_MEDIUM).into()
+    text(t.to_string()).size(theme::fs(theme::TITLE)).font(theme::FONT_MEDIUM).into()
 }
 
 /// `n` and the noun, plural unless `n` is 1.
@@ -261,24 +261,20 @@ fn count(n: usize, noun: &str) -> String {
 
 /// Explanatory text.
 fn note<'a>(t: impl ToString) -> Element<'a, Message> {
-    text(t.to_string()).size(theme::fs(12.0)).color(theme::colors().muted).into()
+    text(t.to_string()).size(theme::fs(theme::SMALL)).color(theme::colors().muted).into()
 }
 
 fn push<'a>(label: &str, msg: Message) -> button::Button<'a, Message> {
-    button(text(label.to_string()).size(theme::fs(13.0))).on_press(msg).padding([4, 10]).style(theme::push)
+    theme::push_button(label).on_press(msg)
 }
 
 fn delete_button<'a>(label: &str) -> Element<'a, Message> {
-    button(theme::icon_label(Icon::Delete, label, true))
-        .on_press(Message::Delete)
-        .padding([4, 10])
-        .style(theme::push)
-        .into()
+    theme::push_content(theme::icon_label(Icon::Delete, label, true)).on_press(Message::Delete).into()
 }
 
 fn input<'a>(app: &App, draft: String, value: String, on: impl Fn(String) -> Message + 'a) -> Element<'a, Message> {
     let shown = app.drafts.get(&draft).cloned().unwrap_or(value);
-    text_input("", &shown).on_input(on).size(theme::fs(13.0)).padding([4, 8]).style(theme::input).into()
+    text_input("", &shown).on_input(on).size(theme::fs(theme::BODY)).padding([4, 8]).style(theme::input).into()
 }
 
 fn numbers(range: std::ops::RangeInclusive<u8>) -> Vec<u8> {
@@ -321,13 +317,13 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
             | PropKey::Delay
             | PropKey::Buffer => field(key.name(), txt(key)),
             PropKey::Data => {
-                let line = theme::fs(13.0) * 1.3;
+                let line = theme::fs(theme::BODY) * 1.3;
                 column![
-                    text(format!("{}:", key.name())).size(theme::fs(13.0)),
+                    text(format!("{}:", key.name())).size(theme::fs(theme::BODY)),
                     text_editor(&app.hex_editor.content)
                         .on_action(Message::HexEdit)
                         .font(Font::MONOSPACE)
-                        .size(theme::fs(13.0))
+                        .size(theme::fs(theme::BODY))
                         .padding([4, 8])
                         // Six lines high whatever the contents; it scrolls.
                         .height(line * 6.0 + 8.0)
@@ -339,7 +335,7 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
             PropKey::Width => field(
                 key.name(),
                 pick_list(numbers(1..=64), Some(p.width()), |w| Message::Prop(Edit::Width(w)))
-                    .text_size(theme::fs(13.0))
+                    .text_size(theme::fs(theme::BODY))
                     .padding([4, 10])
                     .style(theme::dropdown)
                     .menu_style(theme::dropdown_menu)
@@ -348,7 +344,7 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
             PropKey::Inputs => field(
                 key.name(),
                 pick_list(numbers(2..=8), Some(p.inputs()), |w| Message::Prop(Edit::Inputs(w)))
-                    .text_size(theme::fs(13.0))
+                    .text_size(theme::fs(theme::BODY))
                     .padding([4, 10])
                     .style(theme::dropdown)
                     .menu_style(theme::dropdown_menu)
@@ -357,7 +353,7 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
             PropKey::Select => field(
                 key.name(),
                 pick_list(numbers(1..=5), Some(p.select()), |w| Message::Prop(Edit::Select(w)))
-                    .text_size(theme::fs(13.0))
+                    .text_size(theme::fs(theme::BODY))
                     .padding([4, 10])
                     .style(theme::dropdown)
                     .menu_style(theme::dropdown_menu)
@@ -366,7 +362,7 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
             PropKey::OutWidth => field(
                 key.name(),
                 pick_list(numbers(1..=64), Some(p.out_width()), |w| Message::Prop(Edit::OutWidth(w)))
-                    .text_size(theme::fs(13.0))
+                    .text_size(theme::fs(theme::BODY))
                     .padding([4, 10])
                     .style(theme::dropdown)
                     .menu_style(theme::dropdown_menu)
@@ -375,7 +371,7 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
             PropKey::AddrWidth => field(
                 key.name(),
                 pick_list(numbers(1..=16), Some(p.addr_width()), |w| Message::Prop(Edit::AddrWidth(w)))
-                    .text_size(theme::fs(13.0))
+                    .text_size(theme::fs(theme::BODY))
                     .padding([4, 10])
                     .style(theme::dropdown)
                     .menu_style(theme::dropdown_menu)
@@ -384,7 +380,7 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
             PropKey::Length => field(
                 key.name(),
                 pick_list(numbers(1..=64), Some(p.length()), |w| Message::Prop(Edit::Length(w)))
-                    .text_size(theme::fs(13.0))
+                    .text_size(theme::fs(theme::BODY))
                     .padding([4, 10])
                     .style(theme::dropdown)
                     .menu_style(theme::dropdown_menu)
@@ -395,7 +391,7 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
                 pick_list([EdgeOpt(Edge::Rising), EdgeOpt(Edge::Falling)], Some(EdgeOpt(p.edge)), |e| {
                     Message::Prop(Edit::Edge(e))
                 })
-                .text_size(theme::fs(13.0))
+                .text_size(theme::fs(theme::BODY))
                 .padding([4, 10])
                 .style(theme::dropdown)
                 .menu_style(theme::dropdown_menu)
@@ -408,7 +404,7 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
             PropKey::Shift => field(
                 key.name(),
                 pick_list(ShiftMode::ALL.map(ShiftOpt), Some(ShiftOpt(p.shift)), |s| Message::Prop(Edit::Shift(s)))
-                    .text_size(theme::fs(13.0))
+                    .text_size(theme::fs(theme::BODY))
                     .padding([4, 10])
                     .style(theme::dropdown)
                     .menu_style(theme::dropdown_menu)
@@ -417,7 +413,7 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
             PropKey::Radix => field(
                 key.name(),
                 pick_list(&Radix::ALL[..], Some(p.radix), |r| Message::Prop(Edit::Radix(r)))
-                    .text_size(theme::fs(13.0))
+                    .text_size(theme::fs(theme::BODY))
                     .padding([4, 10])
                     .style(theme::dropdown)
                     .menu_style(theme::dropdown_menu)
@@ -434,7 +430,7 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
                 field(
                     key.name(),
                     pick_list(choices, current, |d| Message::Prop(Edit::Digits(d)))
-                        .text_size(theme::fs(13.0))
+                        .text_size(theme::fs(theme::BODY))
                         .padding([4, 10])
                         .style(theme::dropdown)
                         .menu_style(theme::dropdown_menu)
@@ -444,7 +440,7 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
             PropKey::Colors => field(
                 key.name(),
                 pick_list(ColorMode::ALL.map(ColorOpt), Some(ColorOpt(p.colors)), |c| Message::Prop(Edit::Colors(c)))
-                    .text_size(theme::fs(13.0))
+                    .text_size(theme::fs(theme::BODY))
                     .padding([4, 10])
                     .style(theme::dropdown)
                     .menu_style(theme::dropdown_menu)
@@ -461,7 +457,7 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
                     label,
                     row![
                         input(app, format!("{id}.w"), w.to_string(), |s| Message::Prop(Edit::RectW(s))),
-                        text("×").size(theme::fs(13.0)),
+                        text("×").size(theme::fs(theme::BODY)),
                         input(app, format!("{id}.h"), h.to_string(), |s| Message::Prop(Edit::RectH(s))),
                     ]
                     .spacing(4)
@@ -487,12 +483,10 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
         let waiting = app.keyboard_keys(c.id);
         col = col.push(
             row![
-                button(text("Clear buffer").size(theme::fs(13.0)))
-                    .on_press_maybe(waiting.is_some_and(|n| n > 0).then_some(Message::ClearKeyboard(c.id)))
-                    .padding([4, 10])
-                    .style(theme::push),
+                theme::push_button("Clear buffer")
+                    .on_press_maybe(waiting.is_some_and(|n| n > 0).then_some(Message::ClearKeyboard(c.id))),
                 text(format!("{}/{}", waiting.unwrap_or(0), p.key_buffer()))
-                    .size(theme::fs(12.0))
+                    .size(theme::fs(theme::SMALL))
                     .color(theme::colors().muted),
             ]
             .spacing(8)
@@ -516,7 +510,7 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
         let others: Vec<&str> = used.into_keys().filter(|l| !l.is_empty() && *l != label).collect();
         if !others.is_empty() {
             let chips = others.into_iter().map(|l| {
-                button(text(l.to_string()).size(theme::fs(12.0)))
+                button(text(l.to_string()).size(theme::fs(theme::SMALL)))
                     .on_press(Message::Prop(Edit::Text(PropKey::Label, l.to_string())))
                     .padding([2, 8])
                     .style(theme::push)
@@ -573,7 +567,7 @@ fn multi_view(app: &App) -> Element<'_, Message> {
         let wire = app.selection.wires[0].clone();
         col = col.push(
             text(format!("Wire from {}.{} to {}.{}", wire.from.0, wire.from.1, wire.to.0, wire.to.1))
-                .size(theme::fs(13.0)),
+                .size(theme::fs(theme::BODY)),
         );
         col = col.push(small("Add to waveform", Message::TraceWire(wire.clone())));
         col = col.push(section("Routing"));
@@ -631,10 +625,8 @@ fn circuit_view(app: &App) -> Element<'_, Message> {
         col = col.push(
             row![
                 push("Make main", Message::MakeMain),
-                button(theme::icon_label(Icon::Delete, "Delete circuit", true))
-                    .on_press(Message::DeleteCircuit)
-                    .padding([4, 10])
-                    .style(theme::push),
+                theme::push_content(theme::icon_label(Icon::Delete, "Delete circuit", true))
+                    .on_press(Message::DeleteCircuit),
             ]
             .spacing(6),
         );
@@ -646,7 +638,7 @@ fn circuit_view(app: &App) -> Element<'_, Message> {
         if !diags.is_empty() {
             col = col.push(section("Warnings"));
             for d in diags.iter().take(12) {
-                col = col.push(theme::message(Emblem::Warning, text(d.message.clone()).size(theme::fs(12.0))));
+                col = col.push(theme::message(Emblem::Warning, text(d.message.clone()).size(theme::fs(theme::SMALL))));
             }
             if diags.len() > 12 {
                 col = col.push(note(format!("… and {} more", diags.len() - 12)));
@@ -662,7 +654,7 @@ fn circuit_view(app: &App) -> Element<'_, Message> {
             .on_toggle(Message::SetZeroDelay)
             .size(16)
             .label("Delta cycles only")
-            .text_size(theme::fs(13.0))
+            .text_size(theme::fs(theme::BODY))
             .style(theme::check),
     ));
     if !app.zero_delay {
@@ -699,7 +691,7 @@ fn pin_table<'a>(app: &'a App, ins: &[Terminal], outs: &[Terminal]) -> Element<'
         }
     };
     let cell = |content: Element<'a, Message>, width: iced::Length| container(content).width(width).padding([4, 8]);
-    let head = |label: &str| text(label.to_string()).size(theme::fs(12.0)).font(theme::FONT_MEDIUM).into();
+    let head = |label: &str| text(label.to_string()).size(theme::fs(theme::SMALL)).font(theme::FONT_MEDIUM).into();
     // Header of a Qt item view: window colour, separated by a hairline.
     let header = row![
         cell(head("Pin"), Fill),
@@ -717,15 +709,15 @@ fn pin_table<'a>(app: &'a App, ins: &[Terminal], outs: &[Terminal]) -> Element<'
     let rows = ins.iter().map(|t| (t, true)).chain(outs.iter().map(|t| (t, false)));
     for (k, ((name, width, id), is_in)) in rows.enumerate() {
         let (label, color) = if is_in { ("IN", theme::colors().link) } else { ("OUT", theme::colors().positive) };
-        let chip = container(text(label).size(theme::fs(10.0)).font(theme::FONT_MEDIUM).color(color))
+        let chip = container(text(label).size(theme::fs(theme::TINY)).font(theme::FONT_MEDIUM).color(color))
             .padding([0, 5])
             .style(theme::chip(color));
         let bits = if *width == 1 { "1 bit".to_string() } else { format!("{width} bits") };
         let line = row![
-            cell(text(name.clone()).size(theme::fs(13.0)).into(), Fill),
+            cell(text(name.clone()).size(theme::fs(theme::BODY)).into(), Fill),
             cell(chip.into(), 52.into()),
-            cell(text(bits).size(theme::fs(12.0)).color(theme::colors().muted).into(), 58.into()),
-            cell(text(value_of(*id)).size(theme::fs(13.0)).into(), 64.into()),
+            cell(text(bits).size(theme::fs(theme::SMALL)).color(theme::colors().muted).into(), 58.into()),
+            cell(text(value_of(*id)).size(theme::fs(theme::BODY)).into(), 64.into()),
         ]
         .align_y(Alignment::Center);
         // Alternating row colours.
@@ -747,16 +739,7 @@ fn pin_table<'a>(app: &'a App, ins: &[Terminal], outs: &[Terminal]) -> Element<'
                 }),
         );
     }
-    container(table)
-        .width(Fill)
-        .padding(1)
-        .clip(true)
-        .style(|_| Style {
-            background: Some(Background::Color(theme::colors().view)),
-            border: Border { color: theme::colors().frame, width: 1.0, radius: theme::ITEM_RADIUS.into() },
-            ..Default::default()
-        })
-        .into()
+    container(table).width(Fill).padding(1).clip(true).style(theme::frame_box).into()
 }
 
 /// `top` composited over the opaque `base`.

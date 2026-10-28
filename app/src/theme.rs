@@ -1,6 +1,12 @@
 //! Breeze look: the colours of the KDE Plasma colour schemes (light and
 //! dark), flat panels separated by hairlines, Breeze-style buttons and
 //! selections, the colours used for signal values, and the text size.
+//!
+//! Surfaces are told apart by their colour and a one pixel frame; the ones
+//! above the window (buttons, popups, dialogs) also cast a soft shadow, of
+//! one style whose depth follows their [`Elevation`]. Sizes, radii,
+//! paddings and shadows come from the definitions below, so that every
+//! part of the window looks the same.
 
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -23,10 +29,23 @@ pub const FONT_MEDIUM: Font = Font { weight: font::Weight::Medium, ..FONT };
 pub const FONT_DATA: [&[u8]; 2] =
     [include_bytes!("../assets/fonts/NotoSans-Regular.ttf"), include_bytes!("../assets/fonts/NotoSans-Medium.ttf")];
 
-/// Radius of buttons, fields, menus (Breeze frame radius).
+/// Radius of buttons, fields, menus, dialogs and framed boxes (Breeze frame
+/// radius).
 pub const RADIUS: f32 = 5.0;
-/// Radius of list items and small chips.
+/// Radius of list items, chips and scrollbar handles.
 pub const ITEM_RADIUS: f32 = 3.0;
+
+/// Text sizes, before [`fs`]: titles of panels and dialogs.
+pub const TITLE: f32 = 15.0;
+/// Body text: buttons, fields, lists, menus.
+pub const BODY: f32 = 13.0;
+/// Secondary text: notes, small buttons, tooltips, panel headers.
+pub const SMALL: f32 = 12.0;
+/// Badges and states next to list entries.
+pub const TINY: f32 = 11.0;
+
+/// Padding of push buttons, everywhere.
+pub const PUSH_PADDING: [u16; 2] = [4, 10];
 
 // ---- colour schemes ------------------------------------------------------------
 
@@ -57,8 +76,10 @@ pub struct Colors {
     pub accent_soft: Color,
     /// Neutral fill drawn on the canvas (button components, chips).
     pub hover: Color,
-    /// Strength of drop shadows.
+    /// Strength of the shadows (darker backgrounds need stronger ones).
     pub shadow: f32,
+    /// Opacity of the veil behind dialogs.
+    pub backdrop: f32,
 
     pub canvas_bg: Color,
     pub grid: Color,
@@ -102,6 +123,7 @@ pub static LIGHT: Colors = Colors {
     accent_soft: color!(0xd8eefa),
     hover: color!(0xeceef0),
     shadow: 1.0,
+    backdrop: 0.18,
 
     canvas_bg: Color::WHITE,
     grid: color!(0xcbcfd3),
@@ -141,7 +163,8 @@ pub static DARK: Colors = Colors {
     frame: color!(0x4d5258),
     accent_soft: color!(0x1e5774),
     hover: color!(0x31363b),
-    shadow: 2.2,
+    shadow: 1.8,
+    backdrop: 0.4,
 
     canvas_bg: color!(0x17191c),
     grid: color!(0x3d4247),
@@ -214,11 +237,6 @@ pub const fn alpha(c: Color, a: f32) -> Color {
     Color { a, ..c }
 }
 
-/// A shadow of opacity `a` in the light scheme, stronger in the dark one.
-fn shade(a: f32) -> Color {
-    alpha(Color::BLACK, (a * colors().shadow).min(1.0))
-}
-
 /// Colour of a wire carrying `value` on `net`.
 pub fn wire_color(value: Signal, net: &Net) -> Color {
     let c = colors();
@@ -253,8 +271,11 @@ pub fn bit_fill(value: Signal) -> Color {
 
 // ---- surfaces ------------------------------------------------------------------
 
+/// A surface of colour `bg`, snapped to the pixel grid so that its edges,
+/// and hairlines, stay sharp wherever they land (a centred dialog may sit
+/// on half pixels).
 fn fill(bg: Color) -> container::Style {
-    container::Style { background: Some(Background::Color(bg)), ..Default::default() }
+    container::Style { background: Some(Background::Color(bg)), snap: true, ..Default::default() }
 }
 
 /// Docked panels and the status bar.
@@ -286,45 +307,76 @@ pub fn tool_separator<'a, M: 'a>() -> Element<'a, M> {
     container(container(Space::new()).width(1).height(18).style(|_| fill(colors().separator))).padding([0, 4]).into()
 }
 
-fn popup_shadow() -> Shadow {
-    Shadow { color: shade(0.18), offset: Vector::new(0.0, 3.0), blur_radius: 12.0 }
+/// How far a surface stands above the window, which sets its shadow.
+#[derive(Clone, Copy)]
+pub enum Elevation {
+    /// Flat: panels, views, framed boxes.
+    Flat,
+    /// Push buttons.
+    Raised,
+    /// Menus, drop-down lists and tooltips.
+    Popup,
+    /// Dialogs.
+    Dialog,
+}
+
+/// The shadow of the app: straight down, softer and deeper the higher the
+/// surface.
+pub fn shadow(e: Elevation) -> Shadow {
+    let (a, y, blur) = match e {
+        Elevation::Flat => return Shadow::default(),
+        Elevation::Raised => (0.08, 1.0, 1.0),
+        Elevation::Popup => (0.14, 2.0, 8.0),
+        Elevation::Dialog => (0.2, 4.0, 18.0),
+    };
+    Shadow {
+        color: alpha(Color::BLACK, (a * colors().shadow).min(1.0)),
+        offset: Vector::new(0.0, y),
+        blur_radius: blur,
+    }
+}
+
+/// A surface of colour `bg` with the frame of buttons and fields.
+fn framed(bg: Color, e: Elevation) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(bg)),
+        text_color: Some(colors().text),
+        border: Border { color: colors().frame, width: 1.0, radius: RADIUS.into() },
+        shadow: shadow(e),
+        snap: true,
+    }
 }
 
 /// Popup menus.
 pub fn menu(_: &Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(colors().button)),
-        border: Border { color: colors().frame, width: 1.0, radius: RADIUS.into() },
-        shadow: popup_shadow(),
-        ..Default::default()
-    }
+    framed(colors().button, Elevation::Popup)
 }
 
-/// Dialogs.
+/// Dialogs: a panel with a frame, over [`backdrop`].
 pub fn dialog(_: &Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(colors().window)),
-        border: Border { color: colors().frame, width: 1.0, radius: (RADIUS + 1.0).into() },
-        shadow: Shadow { color: shade(0.25), offset: Vector::new(0.0, 6.0), blur_radius: 24.0 },
-        ..Default::default()
-    }
+    framed(colors().window, Elevation::Dialog)
+}
+
+/// The veil over the window behind a dialog.
+pub fn backdrop(_: &Theme) -> container::Style {
+    fill(alpha(Color::BLACK, colors().backdrop))
 }
 
 pub fn tooltip_box(_: &Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(colors().view_alt)),
-        text_color: Some(colors().text),
-        border: Border { color: colors().frame, width: 1.0, radius: RADIUS.into() },
-        shadow: Shadow { color: shade(0.12), offset: Vector::new(0.0, 2.0), blur_radius: 6.0 },
-        ..Default::default()
-    }
+    framed(colors().view_alt, Elevation::Popup)
+}
+
+/// A framed box inside a panel, such as a table: the view colour, with the
+/// frame of the fields.
+pub fn frame_box(_: &Theme) -> container::Style {
+    framed(colors().view, Elevation::Flat)
 }
 
 /// `content` with a Breeze tooltip below it.
 pub fn tip<'a, M: 'a>(content: impl Into<Element<'a, M>>, label: impl ToString) -> Element<'a, M> {
     tooltip(
         content,
-        container(text(label.to_string()).size(fs(12.0))).padding([4, 8]).style(tooltip_box),
+        container(text(label.to_string()).size(fs(SMALL))).padding([4, 8]).style(tooltip_box),
         tooltip::Position::Bottom,
     )
     .gap(4)
@@ -366,7 +418,7 @@ fn style(bg: Option<Color>, fg: Color, border: Color, radius: f32) -> button::St
         background: bg.map(Background::Color),
         text_color: fg,
         border: Border { color: border, width: if border.a > 0.0 { 1.0 } else { 0.0 }, radius: radius.into() },
-        shadow: Shadow::default(),
+        shadow: Default::default(),
         snap: true,
     }
 }
@@ -381,10 +433,21 @@ pub fn push(_: &Theme, status: button::Status) -> button::Style {
             style(Some(alpha(colors().button, 0.6)), colors().disabled, alpha(colors().frame, 0.6), RADIUS)
         }
     };
-    if status != button::Status::Disabled && status != button::Status::Pressed {
-        s.shadow = Shadow { color: shade(0.07), offset: Vector::new(0.0, 1.0), blur_radius: 1.0 };
+    // Pressed or disabled, it sits on the window.
+    if matches!(status, button::Status::Active | button::Status::Hovered) {
+        s.shadow = shadow(Elevation::Raised);
     }
     s
+}
+
+/// A push button showing `label`.
+pub fn push_button<'a, M: 'a>(label: &str) -> button::Button<'a, M> {
+    push_content(text(label.to_string()).size(fs(BODY)))
+}
+
+/// A push button showing `content` (for instance an [`icon_label`]).
+pub fn push_content<'a, M: 'a>(content: impl Into<Element<'a, M>>) -> button::Button<'a, M> {
+    button(content).padding(PUSH_PADDING).style(push)
 }
 
 /// The default button of a dialog: accent tinted.
@@ -503,7 +566,7 @@ pub fn icon_label<'a, M: 'a>(i: icons::Icon, label: &str, enabled: bool) -> Elem
     let color = if enabled { colors().text } else { colors().disabled };
     let mut r = row![icons::icon(i, 16.0, color)].spacing(6).align_y(Alignment::Center);
     if !label.is_empty() {
-        r = r.push(text(label.to_string()).size(fs(13.0)));
+        r = r.push(text(label.to_string()).size(fs(BODY)));
     }
     r.into()
 }
@@ -583,7 +646,7 @@ pub fn dropdown_menu(_: &Theme) -> menu::Style {
         text_color: colors().text,
         selected_text_color: colors().text,
         selected_background: Background::Color(alpha(colors().accent, 0.25)),
-        shadow: popup_shadow(),
+        shadow: shadow(Elevation::Popup),
     }
 }
 
@@ -631,7 +694,7 @@ pub fn scrollbar(theme: &Theme, status: scrollable::Status) -> scrollable::Style
         border: Border::default(),
         scroller: scrollable::Scroller {
             background: Background::Color(thumb),
-            border: Border { radius: 3.0.into(), ..Default::default() },
+            border: Border { radius: ITEM_RADIUS.into(), ..Default::default() },
         },
     };
     s.vertical_rail = rail;

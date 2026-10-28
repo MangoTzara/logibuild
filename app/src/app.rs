@@ -2085,14 +2085,13 @@ impl App {
                 trail = trail.push(icons::icon(Icon::ChevronRight, 12.0, theme::colors().muted));
             }
             let font = if i == last { theme::FONT_MEDIUM } else { theme::FONT };
-            let mut name = row![text(circuit).size(theme::fs(13.0)).font(font)].spacing(5).align_y(Alignment::Center);
+            let mut name =
+                row![text(circuit).size(theme::fs(theme::BODY)).font(font)].spacing(5).align_y(Alignment::Center);
             if !label.is_empty() {
-                name = name.push(text(label).size(theme::fs(12.0)).color(theme::colors().muted));
+                name = name.push(text(label).size(theme::fs(theme::SMALL)).color(theme::colors().muted));
             }
             trail = trail.push(if i == last {
-                button(name)
-                    .padding([3, 8])
-                    .style(|_, _| button::Style { text_color: theme::colors().text, ..Default::default() })
+                button(name).padding([3, 8]).style(theme::bare(theme::colors().text, theme::colors().text))
             } else {
                 button(name).on_press(Message::Breadcrumb(i)).padding([3, 8]).style(theme::tool)
             });
@@ -2105,7 +2104,7 @@ impl App {
             location_row = location_row.push(
                 button(
                     row![
-                        text("HDL").size(theme::fs(13.0)),
+                        text("HDL").size(theme::fs(theme::BODY)),
                         icons::icon(Icon::ChevronRight, 16.0, theme::colors().text)
                     ]
                     .spacing(6)
@@ -2125,19 +2124,19 @@ impl App {
 
         // Messages sit at the top of the view, above the canvas.
         let banner: Option<Element<Message>> = if let Some(err) = &self.error {
-            Some(theme::message(Emblem::Error, text(format!("Compilation error: {err}")).size(theme::fs(13.0))).into())
+            Some(
+                theme::message(Emblem::Error, text(format!("Compilation error: {err}")).size(theme::fs(theme::BODY)))
+                    .into(),
+            )
         } else {
             self.sim().and_then(|s| s.oscillation()).map(|osc| {
                 theme::message(
                     Emblem::Warning,
                     row![
                         text(format!("{osc}. The nets involved are highlighted in orange."))
-                            .size(theme::fs(13.0))
+                            .size(theme::fs(theme::BODY))
                             .width(Fill),
-                        button(text("Reset").size(theme::fs(13.0)))
-                            .on_press(Message::Reset)
-                            .style(theme::push)
-                            .padding([3, 12]),
+                        theme::push_button("Reset").on_press(Message::Reset),
                     ]
                     .align_y(Alignment::Center),
                 )
@@ -2170,10 +2169,7 @@ impl App {
         let h = c.hdl.as_ref()?;
         let name = c.name.clone();
         let push = |label: &str, msg: Message, default: bool| {
-            button(text(label.to_string()).size(theme::fs(13.0)))
-                .on_press(msg)
-                .style(if default { theme::default_push } else { theme::push })
-                .padding([3, 12])
+            theme::push_button(label).on_press(msg).style(if default { theme::default_push } else { theme::push })
         };
         // The file and line declaring the entity, when the HDL view is on.
         #[cfg(feature = "hdl")]
@@ -2191,9 +2187,9 @@ impl App {
         };
         let mut line = row![].spacing(8).align_y(Alignment::Center);
         if !title.is_empty() {
-            line = line.push(text(title).size(theme::fs(13.0)).font(theme::FONT_MEDIUM));
+            line = line.push(text(title).size(theme::fs(theme::BODY)).font(theme::FONT_MEDIUM));
         }
-        line = line.push(text(detail).size(theme::fs(13.0)).width(Fill));
+        line = line.push(text(detail).size(theme::fs(theme::BODY)).width(Fill));
         #[cfg(feature = "hdl")]
         if h.stale && self.settings.hdl && self.hdl.running().is_none() {
             line = line.push(push("Synthesize", Message::Hdl(crate::hdl::Msg::Synthesize), true));
@@ -2226,11 +2222,11 @@ impl App {
         };
         let wicon = |i: Icon, label: &str, msg: WaveMsg| theme::tip(wbtn(theme::icon_label(i, "", true), msg), label);
         let header = row![
-            text("Waveform").size(theme::fs(13.0)).font(theme::FONT_MEDIUM),
+            text("Waveform").size(theme::fs(theme::BODY)).font(theme::FONT_MEDIUM),
             Space::new().width(6),
-            text(format!("t = {now}")).size(theme::fs(12.0)).color(theme::colors().muted),
+            text(format!("t = {now}")).size(theme::fs(theme::SMALL)).color(theme::colors().muted),
             Space::new().width(Fill),
-            button(text("Follow").size(theme::fs(13.0)))
+            button(text("Follow").size(theme::fs(theme::BODY)))
                 .on_press(Message::Wave(WaveMsg::ToggleFollow))
                 .padding([4, 8])
                 .style(theme::toggle(self.wave.follow)),
@@ -2279,9 +2275,10 @@ impl App {
         let mut items = row![].spacing(1).align_y(Alignment::Start);
         for (label, m) in self.menus() {
             let color = if ghost { iced::Color::TRANSPARENT } else { theme::colors().text };
-            let b = button(text(label).size(theme::fs(13.0)).color(color).height(Fill).align_y(Alignment::Center))
-                .height(bar_h)
-                .padding([0, 9]);
+            let b =
+                button(text(label).size(theme::fs(theme::BODY)).color(color).height(Fill).align_y(Alignment::Center))
+                    .height(bar_h)
+                    .padding([0, 9]);
             let b: Element<Message> = if ghost {
                 b.style(|_, _| button::Style::default()).into()
             } else {
@@ -2313,8 +2310,8 @@ impl App {
             button(
                 row![
                     icon,
-                    text(label.to_string()).size(theme::fs(13.0)).width(Fill),
-                    text(key.to_string()).size(theme::fs(12.0)).color(if enabled {
+                    text(label.to_string()).size(theme::fs(theme::BODY)).width(Fill),
+                    text(key.to_string()).size(theme::fs(theme::SMALL)).color(if enabled {
                         theme::colors().muted
                     } else {
                         theme::colors().disabled
@@ -2439,7 +2436,7 @@ impl App {
             ],
             Menu::Settings => {
                 let heading = |label: &str| -> Element<Message> {
-                    container(text(label.to_string()).size(theme::fs(12.0)).color(theme::colors().muted))
+                    container(text(label.to_string()).size(theme::fs(theme::SMALL)).color(theme::colors().muted))
                         .padding([4, 8])
                         .into()
                 };
@@ -2491,7 +2488,7 @@ impl App {
             font: theme::FONT,
             inline_code_highlight: markdown::Highlight {
                 background: theme::alpha(c.text, 0.07).into(),
-                border: iced::border::rounded(3),
+                border: iced::border::rounded(theme::ITEM_RADIUS),
             },
             inline_code_padding: Padding { left: 2.0, right: 2.0, ..Padding::ZERO },
             inline_code_color: c.text,
@@ -2499,81 +2496,77 @@ impl App {
             code_block_font: iced::Font::MONOSPACE,
             link_color: c.link,
         };
-        markdown::view(&self.help, markdown::Settings::with_text_size(theme::fs(13.0), style)).map(|_| Message::Noop)
+        markdown::view(&self.help, markdown::Settings::with_text_size(theme::fs(theme::BODY), style))
+            .map(|_| Message::Noop)
     }
 
     fn modal_overlay(&self, modal: &Modal) -> Element<'_, Message> {
         let dialog_button = |label: &str, msg: Message, default: bool| {
-            button(text(label.to_string()).size(theme::fs(13.0)).width(Fill).align_x(Alignment::Center))
+            button(text(label.to_string()).size(theme::fs(theme::BODY)).width(Fill).align_x(Alignment::Center))
                 .on_press(msg)
                 .width(theme::fs(96.0))
-                .padding([5, 12])
+                .padding(theme::PUSH_PADDING)
                 .style(if default { theme::default_push } else { theme::push })
         };
-        // KMessageBox layout: emblem on the left, buttons at the bottom right.
-        let body = |title: &str, msg: String| {
+        // KMessageBox layout: emblem on the left of the title and the text.
+        let body = |title: &str, msg: String| -> Element<Message> {
             row![
-                icons::emblem(Emblem::Warning, 40.0),
+                icons::emblem(Emblem::Warning, 32.0),
                 column![
-                    text(title.to_string()).size(theme::fs(15.0)).font(theme::FONT_MEDIUM),
-                    text(msg).size(theme::fs(13.0))
+                    text(title.to_string()).size(theme::fs(theme::TITLE)).font(theme::FONT_MEDIUM),
+                    text(msg).size(theme::fs(theme::BODY))
                 ]
                 .spacing(6),
             ]
-            .spacing(16)
+            .spacing(14)
+            .into()
         };
-        let card: Element<Message> = match modal {
+        let (content, buttons): (Element<Message>, Vec<Element<Message>>) = match modal {
             Modal::Unsaved(after) => {
                 let what = match after {
                     After::New => "creating a new project",
                     After::Open => "opening another project",
                     After::Quit => "quitting",
                 };
-                column![
+                (
                     body("Unsaved changes", format!("The project has unsaved changes. Save them before {what}?")),
-                    row![
-                        Space::new().width(Fill),
-                        dialog_button("Save", Message::ModalSave, true),
-                        dialog_button("Don’t save", Message::ModalDiscard, false),
-                        dialog_button("Cancel", Message::ModalCancel, false),
-                    ]
-                    .spacing(6),
-                ]
-                .spacing(20)
-                .into()
+                    vec![
+                        dialog_button("Save", Message::ModalSave, true).into(),
+                        dialog_button("Don’t save", Message::ModalDiscard, false).into(),
+                        dialog_button("Cancel", Message::ModalCancel, false).into(),
+                    ],
+                )
             }
-            Modal::Message(msg) => column![
-                body("Warning", msg.clone()),
-                row![Space::new().width(Fill), dialog_button("OK", Message::ModalCancel, true)],
-            ]
-            .spacing(20)
-            .into(),
-            Modal::Help(kind) => column![
-                text(kind.name()).size(theme::fs(16.0)).font(theme::FONT_MEDIUM),
-                container(theme::scroll(container(self.help_view()).padding(Padding { right: 12.0, ..Padding::ZERO })))
+            Modal::Message(msg) => {
+                (body("Warning", msg.clone()), vec![dialog_button("OK", Message::ModalCancel, true).into()])
+            }
+            Modal::Help(kind) => (
+                column![
+                    text(kind.name()).size(theme::fs(theme::TITLE)).font(theme::FONT_MEDIUM),
+                    container(theme::scroll(
+                        container(self.help_view()).padding(Padding { right: 12.0, ..Padding::ZERO })
+                    ))
                     .max_height(theme::fs(460.0)),
-                row![Space::new().width(Fill), dialog_button("Close", Message::ModalCancel, true)],
-            ]
-            .spacing(14)
-            .into(),
+                ]
+                .spacing(12)
+                .into(),
+                vec![dialog_button("Close", Message::ModalCancel, true).into()],
+            ),
             #[cfg(feature = "hdl")]
-            Modal::HdlTools => column![
-                crate::hdl::view::tools(self),
-                row![Space::new().width(Fill), dialog_button("Close", Message::ModalCancel, true)],
-            ]
-            .spacing(20)
-            .into(),
+            Modal::HdlTools => {
+                (crate::hdl::view::tools(self), vec![dialog_button("Close", Message::ModalCancel, true).into()])
+            }
         };
+        // The content, then the buttons on the right.
+        let card =
+            column![content, row![Space::new().width(Fill)].extend(buttons).spacing(6)].spacing(20).padding([18, 20]);
         let width = if matches!(modal, Modal::Help(_)) { 600.0 } else { 460.0 };
         let dim = container(iced::widget::center(opaque(
-            container(card).padding([18, 20]).width(theme::fs(width)).style(theme::dialog),
+            container(card).width(theme::fs(width)).clip(true).style(theme::dialog),
         )))
         .width(Fill)
         .height(Fill)
-        .style(|_| container::Style {
-            background: Some(iced::Background::Color(iced::Color { a: 0.3, ..iced::Color::BLACK })),
-            ..Default::default()
-        });
+        .style(theme::backdrop);
         opaque(mouse_area(dim).on_press(Message::Noop))
     }
 
@@ -2617,10 +2610,10 @@ impl App {
                     .on_input(Message::CustomSpeed)
                     .on_submit(Message::CustomSpeedDone)
                     .width(theme::fs(90.0))
-                    .size(theme::fs(13.0))
+                    .size(theme::fs(theme::BODY))
                     .padding([4, 8])
                     .style(theme::input),
-                text("tick/s").size(theme::fs(13.0)).color(theme::colors().muted),
+                text("tick/s").size(theme::fs(theme::BODY)).color(theme::colors().muted),
             ]
             .spacing(4)
             .align_y(Alignment::Center)
@@ -2644,18 +2637,18 @@ impl App {
                 tbl(Icon::Reset, "Reset", Message::Reset, has_sim).style(theme::tool),
                 tbl(Icon::Step, "Step", Message::Step, has_sim).style(theme::tool),
                 pick_list(&StepKind::ALL[..], Some(self.step_kind), Message::SetStepKind)
-                    .text_size(theme::fs(13.0))
+                    .text_size(theme::fs(theme::BODY))
                     .padding([4, 10])
                     .style(theme::dropdown)
                     .menu_style(theme::dropdown_menu)
                     .handle(theme::dropdown_handle()),
                 Space::new().width(6),
-                text("Speed:").size(theme::fs(13.0)),
+                text("Speed:").size(theme::fs(theme::BODY)),
                 pick_list(speeds, Some(SpeedChoice::Preset(self.speed)), |c| match c {
                     SpeedChoice::Preset(s) => Message::SetSpeed(s),
                     SpeedChoice::Custom => Message::EditCustomSpeed,
                 })
-                .text_size(theme::fs(13.0))
+                .text_size(theme::fs(theme::BODY))
                 .padding([4, 10])
                 .style(theme::dropdown)
                 .menu_style(theme::dropdown_menu)
@@ -2706,15 +2699,15 @@ impl App {
             row![
                 if self.typing_target().is_some() {
                     text("Typing into the keyboard: keys go to the circuit. Esc to stop.")
-                        .size(theme::fs(12.0))
+                        .size(theme::fs(theme::SMALL))
                         .color(theme::colors().link)
                         .width(Fill)
                 } else {
-                    text(self.status.clone()).size(theme::fs(12.0)).width(Fill)
+                    text(self.status.clone()).size(theme::fs(theme::SMALL)).width(Fill)
                 },
-                text(sim_info).size(theme::fs(12.0)).color(theme::colors().muted),
+                text(sim_info).size(theme::fs(theme::SMALL)).color(theme::colors().muted),
                 theme::vline(),
-                text(zoom).size(theme::fs(12.0)).color(theme::colors().muted),
+                text(zoom).size(theme::fs(theme::SMALL)).color(theme::colors().muted),
             ]
             .spacing(12)
             .height(theme::fs(14.0))
@@ -2750,6 +2743,7 @@ pub(crate) fn splitter<'a>(which: Split, active: bool) -> Element<'a, Message> {
     let color = if active { theme::colors().accent } else { theme::colors().separator };
     let line = move |_: &iced::Theme| container::Style {
         background: Some(iced::Background::Color(color)),
+        snap: true,
         ..Default::default()
     };
     let left_panel = || -> Element<Message> {

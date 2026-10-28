@@ -30,7 +30,7 @@ fn msg(m: Msg) -> Message {
 
 /// Small text button.
 fn small<'a>(label: &str, m: Msg) -> button::Button<'a, Message> {
-    button(text(label.to_string()).size(theme::fs(12.0))).on_press(msg(m)).padding([3, 8]).style(theme::tool)
+    button(text(label.to_string()).size(theme::fs(theme::SMALL))).on_press(msg(m)).padding([3, 8]).style(theme::tool)
 }
 
 /// The Compile / Synthesize (or Cancel) buttons, for the toolbar and the
@@ -50,7 +50,7 @@ pub fn actions(app: &App) -> Vec<Element<'_, Message>> {
         Some(a) => {
             let what = if a == Action::Compile { "Compiling…" } else { "Synthesizing…" };
             vec![
-                text(what).size(theme::fs(13.0)).color(theme::colors().muted).into(),
+                text(what).size(theme::fs(theme::BODY)).color(theme::colors().muted).into(),
                 tb(Icon::Stop, "Cancel", Some(Msg::Cancel), "Stop the tools"),
             ]
         }
@@ -82,7 +82,7 @@ pub fn toolbar(app: &App) -> Vec<Element<'_, Message>> {
         tbl(Icon::New, "New Verilog", Msg::NewFile(Lang::Verilog)),
         theme::tool_separator(),
         pick_list(&VhdlStd::ALL[..], Some(app.project.hdl.vhdl_std), |s| msg(Msg::SetStd(s)))
-            .text_size(theme::fs(13.0))
+            .text_size(theme::fs(theme::BODY))
             .padding([4, 10])
             .style(theme::dropdown)
             .menu_style(theme::dropdown_menu)
@@ -139,17 +139,17 @@ pub fn tools(app: &App) -> Element<'_, Message> {
             .into(),
             None => row![
                 icons::icon(Icon::Close, 14.0, theme::colors().negative),
-                text("Not found").size(theme::fs(11.0)).color(theme::colors().negative),
+                text("Not found").size(theme::fs(theme::TINY)).color(theme::colors().negative),
             ]
             .spacing(4)
             .align_y(Alignment::Center)
             .into(),
         };
         column![
-            text(label).size(theme::fs(13.0)).font(theme::FONT_MEDIUM),
+            text(label).size(theme::fs(theme::BODY)).font(theme::FONT_MEDIUM),
             text_input("Empty: search the PATH and ~/oss-cad-suite/bin", value)
                 .on_input(move |s| msg(on(s)))
-                .size(theme::fs(13.0))
+                .size(theme::fs(theme::BODY))
                 .padding([5, 8])
                 .style(theme::input),
             status,
@@ -157,16 +157,16 @@ pub fn tools(app: &App) -> Element<'_, Message> {
         .spacing(4)
     };
     let mut col = column![
-        text("HDL tools").size(theme::fs(15.0)).font(theme::FONT_MEDIUM),
+        text("HDL tools").size(theme::fs(theme::TITLE)).font(theme::FONT_MEDIUM),
         text("The path of each program, or of the folder holding it, such as ~/oss-cad-suite/bin.")
-            .size(theme::fs(13.0)),
+            .size(theme::fs(theme::BODY)),
         tool("GHDL", &app.settings.ghdl, &app.hdl.ghdl, Msg::SetGhdl),
         tool("Yosys", &app.settings.yosys, &app.hdl.yosys, Msg::SetYosys),
     ]
     .spacing(12);
     if app.hdl.ghdl.is_none() || app.hdl.yosys.is_none() {
         col = col.push(
-            button(text("Get GHDL and Yosys (OSS CAD Suite)").size(theme::fs(13.0)))
+            button(text("Get GHDL and Yosys (OSS CAD Suite)").size(theme::fs(theme::BODY)))
                 .on_press(msg(Msg::GetTools))
                 .padding([2, 0])
                 .style(theme::link),
@@ -184,10 +184,10 @@ fn muted<'a>(s: impl ToString, size: f32) -> text::Text<'a> {
 fn panel_header<'a>(title: &str, summary: String, action: &str, m: Msg) -> Element<'a, Message> {
     let c = theme::colors();
     let header = row![
-        text(title.to_string()).size(theme::fs(12.0)).font(theme::FONT_MEDIUM),
+        text(title.to_string()).size(theme::fs(theme::SMALL)).font(theme::FONT_MEDIUM),
         muted(summary, 11.0),
         Space::new().width(Fill),
-        button(text(action.to_string()).size(theme::fs(12.0)))
+        button(text(action.to_string()).size(theme::fs(theme::SMALL)))
             .on_press(msg(m))
             .padding([2, 4])
             .style(theme::bare(c.muted, c.text)),
@@ -205,7 +205,7 @@ fn placeholder<'a>(s: &str) -> Element<'a, Message> {
 fn sources(app: &App) -> Element<'_, Message> {
     let c = theme::colors();
     let link = |label: &str, m: Msg| {
-        button(text(label.to_string()).size(theme::fs(12.0)))
+        button(text(label.to_string()).size(theme::fs(theme::SMALL)))
             .on_press(msg(m))
             .padding([0, 4])
             .style(theme::bare(c.link, c.accent))
@@ -219,8 +219,9 @@ fn sources(app: &App) -> Element<'_, Message> {
         let name = f.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| f.entry.clone());
         let lang = if f.missing { "missing" } else { f.lang.map_or("?", Lang::name) };
         let file = row![
-            container(elide(name).size(theme::fs(13.0)).color(if f.missing { c.negative } else { c.text })).width(Fill),
-            text(lang).size(theme::fs(11.0)).color(if f.missing { c.negative } else { c.muted }),
+            container(elide(name).size(theme::fs(theme::BODY)).color(if f.missing { c.negative } else { c.text }))
+                .width(Fill),
+            text(lang).size(theme::fs(theme::TINY)).color(if f.missing { c.negative } else { c.muted }),
         ]
         .align_y(Alignment::Center);
         list = list.push(
@@ -245,11 +246,11 @@ fn sources(app: &App) -> Element<'_, Message> {
             };
             // The actions are inside the row, so that the whole row lights up.
             let mut entity =
-                row![container(elide(u.name.clone()).size(theme::fs(12.5)).font(Font::MONOSPACE)).width(Fill)]
+                row![container(elide(u.name.clone()).size(theme::fs(theme::SMALL)).font(Font::MONOSPACE)).width(Fill)]
                     .spacing(6)
                     .align_y(Alignment::Center);
             if !state.is_empty() {
-                entity = entity.push(text(state).color(color).size(theme::fs(11.0)));
+                entity = entity.push(text(state).color(color).size(theme::fs(theme::TINY)));
             }
             let entity = entity.push(action);
             units = units.push(
@@ -263,12 +264,7 @@ fn sources(app: &App) -> Element<'_, Message> {
         if !f.units.is_empty() {
             // Tree guide: a vertical line joining the entities of the file,
             // over the rows so that their highlight still spans the width.
-            let guide = container(container(Space::new()).width(1).height(Fill).style(|_| container::Style {
-                background: Some(iced::Background::Color(theme::colors().separator)),
-                ..Default::default()
-            }))
-            .padding(Padding { left: 16.0, ..Padding::ZERO })
-            .height(Fill);
+            let guide = container(theme::vline()).padding(Padding { left: 16.0, ..Padding::ZERO }).height(Fill);
             list = list.push(stack![units, guide].width(Fill));
         }
     }
@@ -291,7 +287,7 @@ fn editor(app: &App) -> Element<'_, Message> {
         return empty_editor(app);
     };
     let action = |label: &str, m: Msg| {
-        button(text(label.to_string()).size(theme::fs(12.0)))
+        button(text(label.to_string()).size(theme::fs(theme::SMALL)))
             .on_press(msg(m))
             .padding([4, 8])
             .style(theme::bare(c.muted, c.text))
@@ -306,7 +302,7 @@ fn editor(app: &App) -> Element<'_, Message> {
         tabs = tabs.push(
             container(
                 row![
-                    button(text(label).size(theme::fs(12.5)))
+                    button(text(label).size(theme::fs(theme::BODY)))
                         .on_press(msg(Msg::SelectTab(i)))
                         .padding(Padding { top: 6.0, right: 4.0, bottom: 6.0, left: 12.0 })
                         .style(theme::bare(fg, c.text)),
@@ -345,9 +341,9 @@ fn editor(app: &App) -> Element<'_, Message> {
             container(theme::message(
                 Emblem::Warning,
                 row![
-                    text("The file changed on disk.").size(theme::fs(12.0)).width(Fill),
-                    small("Reload", Msg::Reload).style(theme::push),
-                    small("Keep my version", Msg::KeepMine).style(theme::push),
+                    text("The file changed on disk.").size(theme::fs(theme::SMALL)).width(Fill),
+                    theme::push_button("Reload").on_press(msg(Msg::Reload)),
+                    theme::push_button("Keep my version").on_press(msg(Msg::KeepMine)),
                 ]
                 .spacing(6)
                 .align_y(Alignment::Center),
@@ -358,7 +354,7 @@ fn editor(app: &App) -> Element<'_, Message> {
     let edit = text_editor(&tab.content)
         .on_action(|a| msg(Msg::Edit(a)))
         .font(Font::MONOSPACE)
-        .size(theme::fs(13.0))
+        .size(theme::fs(theme::BODY))
         .height(Fill)
         .padding(Padding { top: 8.0, right: 4.0, bottom: 8.0, left: 12.0 })
         .style(theme::code_area)
@@ -512,14 +508,12 @@ fn empty_editor(app: &App) -> Element<'_, Message> {
     } else {
         "Pick a source from the list, or add another one."
     };
-    let act = |i: Icon, label: &str, m: Msg| {
-        button(theme::icon_label(i, label, true)).on_press(msg(m)).padding([5, 12]).style(theme::push)
-    };
+    let act = |i: Icon, label: &str, m: Msg| theme::push_content(theme::icon_label(i, label, true)).on_press(msg(m));
     container(
         column![
             icons::icon(Icon::Chip, 48.0, c.disabled),
             Space::new().height(4),
-            text("No file open").size(theme::fs(16.0)).font(theme::FONT_MEDIUM),
+            text("No file open").size(theme::fs(theme::TITLE)).font(theme::FONT_MEDIUM),
             muted(hint, 13.0),
             Space::new().height(8),
             row![
@@ -554,7 +548,7 @@ fn log(app: &App) -> Element<'_, Message> {
             Level::Warning => theme::colors().neutral,
             Level::Info => theme::colors().muted,
         };
-        let t = text(d.text.clone()).size(theme::fs(11.5)).font(Font::MONOSPACE).color(color);
+        let t = text(d.text.clone()).size(theme::fs(theme::SMALL)).font(Font::MONOSPACE).color(color);
         let line: Element<Message> = if d.file.is_some() && d.line.is_some() {
             theme::tip(
                 button(t).on_press(msg(Msg::GoTo(i))).padding([1, 6]).width(Fill).style(theme::row_item(false)),

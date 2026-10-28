@@ -284,7 +284,7 @@ impl canvas::Program<WaveMsg> for Waveform<'_> {
                     content: format!("{}", t as u64),
                     position: Point::new(x + 3.0, RULER_H / 2.0),
                     color: theme::colors().muted,
-                    size: theme::fs(11.0).into(),
+                    size: theme::fs(theme::TINY).into(),
                     font: theme::FONT,
                     align_y: Vertical::Center,
                     ..Default::default()
@@ -356,7 +356,7 @@ impl Waveform<'_> {
             ..Default::default()
         });
         // Fewer characters fit with a larger text, more in a wider column.
-        let max = ((16.0 * 13.0 / theme::fs(13.0)) * (self.view.names_w / NAME_W)) as usize;
+        let max = ((16.0 * 13.0 / theme::fs(theme::BODY)) * (self.view.names_w / NAME_W)) as usize;
         let mut name = s.name.clone();
         if name.chars().count() > max {
             name = format!(
@@ -368,7 +368,7 @@ impl Waveform<'_> {
             content: name,
             position: Point::new(20.0, cy),
             color: theme::colors().text,
-            size: theme::fs(13.0).into(),
+            size: theme::fs(theme::BODY).into(),
             font: theme::FONT,
             align_y: Vertical::Center,
             ..Default::default()
@@ -377,7 +377,7 @@ impl Waveform<'_> {
             content: value,
             position: Point::new(self.view.names_w - 52.0, cy),
             color: theme::colors().link,
-            size: theme::fs(12.0).into(),
+            size: theme::fs(theme::SMALL).into(),
             font: theme::FONT,
             align_x: TextAlign::Right,
             align_y: Vertical::Center,
@@ -480,7 +480,7 @@ impl Waveform<'_> {
                         content: text,
                         position: Point::new((x0 + x1) / 2.0, mid),
                         color: theme::colors().text,
-                        size: theme::fs(11.0).into(),
+                        size: theme::fs(theme::TINY).into(),
                         font: theme::FONT,
                         align_x: TextAlign::Center,
                         align_y: Vertical::Center,

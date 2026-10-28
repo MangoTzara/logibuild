@@ -37,14 +37,14 @@ fn header(label: &str, open: bool, count: usize) -> Element<'_, Message> {
     let chevron = if open { Icon::ChevronDown } else { Icon::ChevronRight };
     let mut line = row![
         icons::icon(chevron, 12.0, theme::colors().muted),
-        text(label.to_string()).size(theme::fs(12.0)).font(theme::FONT_MEDIUM).color(theme::colors().muted),
+        text(label.to_string()).size(theme::fs(theme::SMALL)).font(theme::FONT_MEDIUM).color(theme::colors().muted),
     ]
     .spacing(6)
     .align_y(Alignment::Center);
     if !open {
         line = line
             .push(Space::new().width(Fill))
-            .push(text(format!("{count}")).size(theme::fs(11.0)).color(theme::colors().muted));
+            .push(text(format!("{count}")).size(theme::fs(theme::TINY)).color(theme::colors().muted));
     }
     button(line)
         .on_press(Message::ToggleSection(label.to_string()))
@@ -60,7 +60,7 @@ const ENTRY: Padding = Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 24.0 }
 pub fn view(app: &App) -> Element<'_, Message> {
     let search = text_input("Search components…", &app.search)
         .on_input(Message::Search)
-        .size(theme::fs(13.0))
+        .size(theme::fs(theme::BODY))
         .padding(Padding { top: 6.0, right: 8.0, bottom: 6.0, left: 28.0 })
         .style(theme::input);
     let search = stack![
@@ -110,9 +110,9 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 // circuit. Inside the row, so that the whole row lights up.
                 let side: Element<Message> = if shown {
                     // A state, not an action: grey and without a badge.
-                    text("Editing").size(theme::fs(12.0)).color(theme::colors().muted).into()
+                    text("Editing").size(theme::fs(theme::SMALL)).color(theme::colors().muted).into()
                 } else {
-                    button(text("Open").size(theme::fs(12.0)))
+                    button(text("Open").size(theme::fs(theme::SMALL)))
                         .on_press(Message::OpenCircuit(name.clone()))
                         .padding([0, 2])
                         .style(theme::bare(theme::colors().link, theme::colors().accent))
@@ -121,17 +121,18 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 // The shown circuit cannot be placed in itself: its name is only
                 // coloured, unlike the highlight of the subcircuit being placed.
                 // The name is cut to keep the right column in view.
-                let mut left = row![elide(name.clone()).size(theme::fs(13.0))].spacing(6).align_y(Alignment::Center);
+                let mut left =
+                    row![elide(name.clone()).size(theme::fs(theme::BODY))].spacing(6).align_y(Alignment::Center);
                 if i == 0 {
-                    left = left.push(text("★").size(theme::fs(13.0)));
+                    left = left.push(text("★").size(theme::fs(theme::BODY)));
                 }
                 // The HDL tag sits right aligned, before the right column.
                 let mut content =
-                    row![left.push(text(tip).size(theme::fs(12.0)).color(theme::colors().muted)).width(Fill)]
+                    row![left.push(text(tip).size(theme::fs(theme::SMALL)).color(theme::colors().muted)).width(Fill)]
                         .spacing(6)
                         .align_y(Alignment::Center);
                 if !tag.is_empty() {
-                    content = content.push(text(tag).size(theme::fs(11.0)).color(tag_color));
+                    content = content.push(text(tag).size(theme::fs(theme::TINY)).color(tag_color));
                 }
                 let content = content.push(side);
                 let pick: Element<Message> = if placeable {
@@ -155,7 +156,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 let pick = match refusal {
                     Some(why) if !shown => tooltip(
                         pick,
-                        container(text(why).size(theme::fs(12.0)))
+                        container(text(why).size(theme::fs(theme::SMALL)))
                             .padding([4, 8])
                             .max_width(260)
                             .style(theme::tooltip_box),
@@ -188,7 +189,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         for k in kinds {
             let selected = current.as_ref().is_some_and(|(c, _)| *c == k);
             list = list.push(
-                button(text(k.name()).size(theme::fs(13.0)))
+                button(text(k.name()).size(theme::fs(theme::BODY)))
                     .on_press(Message::PickTool(k))
                     .width(Fill)
                     .padding(ENTRY)
@@ -197,8 +198,10 @@ pub fn view(app: &App) -> Element<'_, Message> {
         }
     }
     if !any && searching {
-        list = list
-            .push(container(text("No components found").size(theme::fs(12.0)).color(theme::colors().muted)).padding(8));
+        list = list.push(
+            container(text("No components found").size(theme::fs(theme::SMALL)).color(theme::colors().muted))
+                .padding(8),
+        );
     }
 
     let new = theme::tip(
