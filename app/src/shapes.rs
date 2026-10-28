@@ -353,12 +353,12 @@ pub fn draw_component(frame: &mut Frame, view: View, comp: &Component, geom: &Co
             let n = props.seg_digits() as usize;
             let sw = (p.view.scale * 0.35).max(1.5);
             for k in 0..n {
-                // One pin per segment, or one 8-bit pin per digit (the
-                // leftmost digit has the last pin).
+                // One pin per segment, or one 8-bit pin per digit, under it
+                // (the pins go left to right, `dig0` being the rightmost).
                 let mask = if n == 1 {
                     (0..8).filter(|&i| live.pin(i).is_some_and(|v| v.is_one())).fold(0, |m, i| m | 1 << i)
                 } else {
-                    let v = live.pin(n - 1 - k);
+                    let v = live.pin(k);
                     (0..8).filter(|&i| v.is_some_and(|v| v.bit(i) == Bit::One)).fold(0, |m, i| m | 1 << i)
                 };
                 draw_digit(&mut p, 1.4 + 4.0 * k as f32, 1.3, 2.4, 6.4, mask | DP_SHOWN, sw);
