@@ -22,6 +22,15 @@ The window has five areas:
 | Right | properties of the selection, or of the circuit when nothing is selected |
 | Bottom | status line: simulation time and state, frame rate, zoom |
 
+### Command palette
+
+**Ctrl+Shift+P** (or **View → Command palette…**) opens a search field over the window. Type
+part of a name to find any menu command, any component to place ("place and") or any circuit
+to open or place as a subcircuit. Matches whose name starts with the text come first. **↑**
+and **↓** move the highlight, **Enter** runs it, **Esc** or a click outside closes the
+palette. Commands that do not apply now are greyed out, with their shortcut on the right. The
+palette also opens the documentation of the component being placed or selected (like **F1**).
+
 ## Building circuits
 
 ### Placing components
@@ -295,6 +304,7 @@ text size, from 90% to 175% (100% is the default). The choices are kept in
 
 | Action | Keys |
 | --- | --- |
+| Command palette | Ctrl+Shift+P |
 | New / Open / Save / Save as | Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+Shift+S |
 | Undo / Redo | Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y |
 | Copy / Cut / Paste / Duplicate | Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+D |

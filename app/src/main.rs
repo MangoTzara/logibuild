@@ -3,6 +3,7 @@
 mod app;
 mod autoroute;
 mod canvas;
+mod commands;
 mod elide;
 #[cfg(feature = "hdl")]
 mod hdl;

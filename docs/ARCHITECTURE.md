@@ -129,6 +129,7 @@ the circuits.
 | `autoroute` | The automatic router. |
 | `waveform` | The timing diagram canvas. |
 | `palette`, `props` | Left and right panels. |
+| `commands` | Command palette: the commands of the menus, components and circuits, filtered by what is typed. |
 | `theme` | Light and dark colour schemes (from KDE Breeze), widget styles (KDE Plasma look), embedded Noto Sans, signal colours, text scaling (`fs`). |
 | `settings` | Colour scheme, text size and HDL options, saved in the user configuration directory. |
 | `hdl` | (feature `hdl`) HDL panel: sources, editor with highlighting, jobs run on a thread, file polling, applying a synthesis. |

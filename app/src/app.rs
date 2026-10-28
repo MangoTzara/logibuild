@@ -20,6 +20,7 @@ use lb_core::value::Signal;
 
 use crate::autoroute;
 use crate::canvas::{CircuitCache, Editor, EditorEvent, Selection, Tool, orient_wire};
+use crate::commands::{self, CommandPalette};
 use crate::icons::{self, Emblem, Icon};
 use crate::routing;
 use crate::settings::{Scheme, Settings, TEXT_SIZE_RANGE, TEXT_SIZES};
@@ -165,6 +166,20 @@ pub enum Menu {
     Settings,
 }
 
+/// Which commands of the menus and the command palette apply now.
+pub struct Enabled {
+    /// Components are selected.
+    pub sel: bool,
+    /// Something is selected (components or wires).
+    pub delete: bool,
+    pub paste: bool,
+    /// Rotate and flip: a selection or a component being placed.
+    pub transform: bool,
+    pub align: bool,
+    /// The shown circuit is simulated.
+    pub sim: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Align {
     Left,
@@ -252,6 +267,14 @@ pub enum Message {
     /// The desktop switched between light and dark.
     SystemTheme(iced::theme::Mode),
     ToggleWaveform,
+    // Command palette
+    OpenCommands,
+    CloseCommands,
+    CommandQuery(String),
+    /// Move the highlight up (-1) or down (+1).
+    CommandMove(i32),
+    /// Run the match with this index.
+    CommandRun(usize),
     // Palette, circuits
     Search(String),
     /// Collapse or expand a section of the component library.
@@ -329,6 +352,8 @@ pub struct App {
     pub modal: Option<Modal>,
     /// The documentation shown by [`Modal::Help`], parsed.
     help: Vec<iced::widget::markdown::Item>,
+    /// The command palette, while it is open.
+    pub commands: Option<CommandPalette>,
     after_save: Option<After>,
     pub show_grid: bool,
     /// Text being typed in property fields, by key.
@@ -404,6 +429,7 @@ impl App {
             canvas_size: Size::new(800.0, 600.0),
             modal: None,
             help: Vec::new(),
+            commands: None,
             after_save: None,
             show_grid: true,
             drafts: HashMap::new(),
@@ -1170,6 +1196,39 @@ impl App {
             }
             Message::ToggleGrid => self.show_grid = !self.show_grid,
             Message::ToggleWaveform => self.wave.visible = !self.wave.visible,
+
+            // ---- command palette
+            Message::OpenCommands => {
+                if self.modal.is_some() {
+                    return Task::none();
+                }
+                self.commands = Some(CommandPalette::default());
+                return Task::batch([
+                    iced::widget::operation::focus(commands::INPUT_ID),
+                    iced::widget::operation::select_all(commands::INPUT_ID),
+                ]);
+            }
+            Message::CloseCommands => self.commands = None,
+            Message::CommandQuery(q) => {
+                if let Some(p) = &mut self.commands {
+                    *p = CommandPalette { query: q, ..CommandPalette::default() };
+                }
+            }
+            Message::CommandMove(delta) => {
+                if let Some(p) = &self.commands {
+                    let n = commands::matches(self, p).len();
+                    if let Some(p) = &mut self.commands {
+                        p.step(delta, n);
+                    }
+                }
+            }
+            Message::CommandRun(i) => {
+                let Some(p) = &self.commands else { return Task::none() };
+                if let Some(e) = commands::matches(self, p).into_iter().nth(i).filter(|e| e.enabled) {
+                    self.commands = None;
+                    return self.update(e.msg);
+                }
+            }
             Message::SetScheme(scheme) => self.change_settings(Settings { scheme, ..self.settings.clone() }),
             Message::SetTextSize(n) => {
                 let text_size = n.clamp(*TEXT_SIZE_RANGE.start(), *TEXT_SIZE_RANGE.end());
@@ -1847,20 +1906,24 @@ impl App {
         Task::none()
     }
 
+    /// The component whose documentation F1 shows: the one being placed or selected.
+    pub(crate) fn help_kind(&self) -> Option<Kind> {
+        match &self.tool {
+            Tool::Place { kind, .. } => Some(*kind),
+            _ if self.selection.comps.len() == 1 => {
+                self.selection.comps.first().and_then(|&id| self.circuit().component(id)).map(|c| c.kind)
+            }
+            _ => None,
+        }
+    }
+
     fn key(&mut self, ev: keyboard::Event) -> Task<Message> {
         // F1: the documentation of the component being placed or selected.
         if let keyboard::Event::KeyPressed { key: Key::Named(Named::F1), .. } = &ev
             && self.modal.is_none()
             && !self.hdl_shown()
         {
-            let kind = match &self.tool {
-                Tool::Place { kind, .. } => Some(*kind),
-                _ if self.selection.comps.len() == 1 => {
-                    self.selection.comps.first().and_then(|&id| self.circuit().component(id)).map(|c| c.kind)
-                }
-                _ => None,
-            };
-            return kind.map_or(Task::none(), |k| self.update(Message::ShowHelp(k)));
+            return self.help_kind().map_or(Task::none(), |k| self.update(Message::ShowHelp(k)));
         }
         // A selected keyboard component takes the keys, except shortcuts
         // with Ctrl or Alt.
@@ -1868,6 +1931,7 @@ impl App {
             && !modifiers.command()
             && !modifiers.alt()
             && self.modal.is_none()
+            && self.commands.is_none()
             && let Some(id) = self.typing_target()
         {
             let code = match key.as_ref() {
@@ -1889,6 +1953,10 @@ impl App {
             }
             return Task::none();
         }
+        // The open command palette handles its own keys (see `subscription`).
+        if self.commands.is_some() {
+            return Task::none();
+        }
         match ev {
             keyboard::Event::KeyPressed { key, modifiers, repeat, .. } => {
                 let ctrl = modifiers.command();
@@ -1900,6 +1968,7 @@ impl App {
                         (true, true, "s") => Some(Message::SaveAs),
                         (true, _, "o") => Some(Message::Open),
                         (true, _, "n") => Some(Message::New),
+                        (true, true, "p") => Some(Message::OpenCommands),
                         _ => None,
                     },
                     k if self.hdl_shown() && k != Key::Named(Named::Escape) => None,
@@ -1934,6 +2003,7 @@ impl App {
                             (true, true, "s") => Some(Message::SaveAs),
                             (true, _, "o") => Some(Message::Open),
                             (true, _, "n") => Some(Message::New),
+                            (true, true, "p") => Some(Message::OpenCommands),
                             (true, false, "z") => Some(Message::Undo),
                             (true, true, "z") | (true, _, "y") => Some(Message::Redo),
                             (true, _, "c") => Some(Message::Copy),
@@ -1981,6 +2051,19 @@ impl App {
         }
         #[cfg(feature = "hdl")]
         subs.push(crate::hdl::subscription(self));
+        if self.commands.is_some() {
+            // Also the keys the focused search field captures: Escape would
+            // only unfocus it.
+            subs.push(iced::event::listen_with(|event, _status, _window| match event {
+                iced::Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) => match key.as_ref() {
+                    Key::Named(Named::Escape) => Some(Message::CloseCommands),
+                    Key::Named(Named::ArrowUp) => Some(Message::CommandMove(-1)),
+                    Key::Named(Named::ArrowDown) => Some(Message::CommandMove(1)),
+                    _ => None,
+                },
+                _ => None,
+            }));
+        }
         if self.resizing.is_some() {
             subs.push(iced::event::listen_with(|event, _status, _window| match event {
                 iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => Some(Message::ResizeMove(position)),
@@ -2013,6 +2096,9 @@ impl App {
         let mut layers: Vec<Element<Message>> = vec![base.into()];
         if let Some(m) = self.menu {
             layers.push(self.menu_overlay(m));
+        }
+        if let Some(p) = &self.commands {
+            layers.push(commands::view(self, p));
         }
         if let Some(modal) = &self.modal {
             layers.push(self.modal_overlay(modal));
@@ -2168,6 +2254,19 @@ impl App {
     }
 
     /// The menus shown in the menu bar.
+    /// Which commands apply to the current selection, tool and simulation.
+    pub fn enabled(&self) -> Enabled {
+        let sel = !self.selection.comps.is_empty();
+        Enabled {
+            sel,
+            delete: !self.selection.is_empty(),
+            paste: !self.clipboard.is_empty(),
+            transform: sel || matches!(self.tool, Tool::Place { .. }),
+            align: self.selection.comps.len() > 1,
+            sim: self.sim().is_some(),
+        }
+    }
+
     fn menus(&self) -> Vec<(&'static str, Menu)> {
         let mut m =
             vec![("File", Menu::File), ("Edit", Menu::Edit), ("Simulation", Menu::Simulation), ("View", Menu::View)];
@@ -2308,10 +2407,7 @@ impl App {
             tinted(Some(i), Some(c), label, "", msg, true)
         };
         let sep = || -> Element<Message> { container(theme::hline()).padding([4, 6]).into() };
-        let sel = !self.selection.comps.is_empty();
-        let transform = sel || matches!(self.tool, Tool::Place { .. });
-        let align = self.selection.comps.len() > 1;
-        let has_sim = self.sim().is_some();
+        let Enabled { sel, delete, paste, transform, align, sim: has_sim } = self.enabled();
         let items: Vec<Element<Message>> = match m {
             Menu::File => vec![
                 entry(Some(Icon::New), "New", "Ctrl+N", Message::New, true),
@@ -2342,9 +2438,9 @@ impl App {
                 sep(),
                 entry(None, "Cut", "Ctrl+X", Message::Cut, sel),
                 entry(None, "Copy", "Ctrl+C", Message::Copy, sel),
-                entry(None, "Paste", "Ctrl+V", Message::Paste, !self.clipboard.is_empty()),
+                entry(None, "Paste", "Ctrl+V", Message::Paste, paste),
                 entry(None, "Duplicate", "Ctrl+D", Message::Duplicate, sel),
-                entry(Some(Icon::Delete), "Delete", "Del", Message::Delete, !self.selection.is_empty()),
+                entry(Some(Icon::Delete), "Delete", "Del", Message::Delete, delete),
                 entry(None, "Select all", "Ctrl+A", Message::SelectAll, true),
                 sep(),
                 entry(Some(Icon::Rotate), "Rotate", "R", Message::Rotate, transform),
@@ -2398,6 +2494,8 @@ impl App {
                 sep(),
                 toggle("Grid", self.show_grid, Message::ToggleGrid),
                 toggle("Waveform", self.wave.visible, Message::ToggleWaveform),
+                sep(),
+                entry(Some(Icon::Search), "Command palette…", "Ctrl+Shift+P", Message::OpenCommands, true),
             ],
             Menu::Settings => {
                 let heading = |label: &str| -> Element<Message> {
