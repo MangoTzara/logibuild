@@ -286,7 +286,13 @@ pub fn update(app: &mut App, m: Msg) -> Task<Message> {
                 if action.is_edit() {
                     tab.dirty = true;
                 }
-                tab.content.perform(action);
+                let times = match action {
+                    text_editor::Action::Edit(text_editor::Edit::Backspace) => backspaces(&tab.content),
+                    _ => 1,
+                };
+                for _ in 0..times {
+                    tab.content.perform(action.clone());
+                }
             }
         }
         m @ (Msg::Undo | Msg::Redo) => {
@@ -609,6 +615,27 @@ fn open(app: &mut App, path: &Path) {
         }
         Err(e) => app.set_status(format!("Cannot open {}: {e}", path.display())),
     }
+}
+
+/// Width of an indentation step in the source editor (the editor's tab
+/// width, see vendor/README.md).
+const TAB: usize = 4;
+
+/// Characters a Backspace deletes: back to the previous tab stop when only
+/// spaces are in between, as if they were a tab; otherwise one.
+fn backspaces(content: &text_editor::Content) -> usize {
+    let cursor = content.cursor();
+    if cursor.selection.is_some() {
+        return 1;
+    }
+    let Some(line) = content.line(cursor.position.line) else { return 1 };
+    let Some(before) = line.text.get(..cursor.position.column) else { return 1 };
+    let spaces = before.len() - before.trim_end_matches(' ').len();
+    let n = match before.chars().count() % TAB {
+        0 => TAB,
+        n => n,
+    };
+    if spaces >= n { n } else { 1 }
 }
 
 fn reload(tab: &mut Tab) {
@@ -1049,6 +1076,22 @@ mod tests {
         at(&mut app, 0);
         let _ = update(&mut app, Msg::Edit(Action::Edit(Edit::Indent)));
         assert_eq!(text(&app), "    entity  is end;\n");
+        // Backspace after spaces goes back to the previous tab stop.
+        at(&mut app, 4);
+        let _ = update(&mut app, Msg::Edit(Action::Edit(Edit::Indent)));
+        let _ = update(&mut app, Msg::Edit(Action::Edit(Edit::Insert(' '))));
+        assert_eq!(text(&app), format!("{}entity  is end;\n", " ".repeat(9)));
+        let _ = update(&mut app, Msg::Edit(Action::Edit(Edit::Backspace)));
+        assert_eq!(text(&app), format!("{}entity  is end;\n", " ".repeat(8)));
+        let _ = update(&mut app, Msg::Edit(Action::Edit(Edit::Backspace)));
+        assert_eq!(text(&app), "    entity  is end;\n");
+        let _ = update(&mut app, Msg::Edit(Action::Edit(Edit::Backspace)));
+        assert_eq!(text(&app), "entity  is end;\n");
+        // One undo step for the run of Backspaces.
+        let _ = update(&mut app, Msg::Undo);
+        assert_eq!(text(&app), format!("{}entity  is end;\n", " ".repeat(9)));
+        let _ = update(&mut app, Msg::Undo);
+        let _ = update(&mut app, Msg::Undo);
         let _ = update(&mut app, Msg::Undo);
         let _ = update(&mut app, Msg::Undo);
         assert_eq!(text(&app), "entity counter is end;\n");
