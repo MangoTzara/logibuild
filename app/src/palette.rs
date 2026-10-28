@@ -7,6 +7,7 @@ use lb_core::component::{Category, Kind};
 
 use crate::app::{App, Message};
 use crate::canvas::Tool;
+use crate::elide::elide;
 use crate::icons::{self, Icon};
 use crate::theme;
 
@@ -29,9 +30,6 @@ const ORDER: [Category; 7] = [
 ];
 
 pub const CIRCUITS_SECTION: &str = "Project circuits";
-
-/// Width of the column with "Open" / "Editing" next to each circuit.
-const SIDE_W: f32 = 52.0;
 
 /// Clickable section header with a disclosure arrow; `count` is shown when
 /// collapsed.
@@ -99,10 +97,15 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 let placeable = refusal.is_none();
                 let shown = name == here;
                 let selected = current.as_ref().is_some_and(|(k, n)| *k == Kind::Subcircuit && *n == name);
-                let label = if i == 0 { format!("{name}  ★") } else { name.clone() };
                 // The main circuit (★) is never placeable; others only when
                 // they would not contain the shown circuit.
                 let tip = if !shown && i > 0 && !placeable { "(recursive)" } else { "" };
+                // Circuits synthesized from HDL, orange when out of date.
+                let (tag, tag_color) = match &c.hdl {
+                    Some(h) if h.stale => ("HDL", theme::colors().neutral),
+                    Some(_) => ("HDL", theme::colors().muted),
+                    None => ("", theme::colors().muted),
+                };
                 // Right column, right aligned: "Open", or "Editing" for the shown
                 // circuit. Inside the row, so that the whole row lights up.
                 let side: Element<Message> = if shown {
@@ -115,14 +118,22 @@ pub fn view(app: &App) -> Element<'_, Message> {
                         .style(theme::bare(theme::colors().link, theme::colors().accent))
                         .into()
                 };
-                let content = row![
-                    text(label).size(theme::fs(13.0)),
-                    text(tip).size(theme::fs(12.0)).color(theme::colors().muted),
-                    Space::new().width(Fill),
-                    container(side).width(theme::fs(SIDE_W)).align_right(theme::fs(SIDE_W)),
-                ]
-                .spacing(6)
-                .align_y(Alignment::Center);
+                // The shown circuit cannot be placed in itself: its name is only
+                // coloured, unlike the highlight of the subcircuit being placed.
+                // The name is cut to keep the right column in view.
+                let mut left = row![elide(name.clone()).size(theme::fs(13.0))].spacing(6).align_y(Alignment::Center);
+                if i == 0 {
+                    left = left.push(text("★").size(theme::fs(13.0)));
+                }
+                // The HDL tag sits right aligned, before the right column.
+                let mut content =
+                    row![left.push(text(tip).size(theme::fs(12.0)).color(theme::colors().muted)).width(Fill)]
+                        .spacing(6)
+                        .align_y(Alignment::Center);
+                if !tag.is_empty() {
+                    content = content.push(text(tag).size(theme::fs(11.0)).color(tag_color));
+                }
+                let content = content.push(side);
                 let pick: Element<Message> = if placeable {
                     button(content)
                         .on_press(Message::PickSubcircuit(name.clone()))

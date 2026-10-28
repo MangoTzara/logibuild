@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["core", "app"]
+members = ["core", "hdl", "app"]
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.1.0"
@@ -10,6 +11,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 lb_core = { path = "core" }
+lb_hdl = { path = "hdl" }
 serde = { version = "1", features = ["derive"] }
 ron = "0.12"
 
@@ -18,3 +20,8 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 opt-level = 2
+
+# Fixes and additions to the text editor of iced 0.14: see vendor/README.md.
+[patch.crates-io]
+iced_graphics = { path = "vendor/iced_graphics" }
+iced_widget = { path = "vendor/iced_widget" }

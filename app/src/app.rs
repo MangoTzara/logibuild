@@ -161,6 +161,7 @@ pub enum Menu {
     Edit,
     Simulation,
     View,
+    Hdl,
     Settings,
 }
 
@@ -186,6 +187,9 @@ pub enum After {
 pub enum Modal {
     Unsaved(After),
     Message(String),
+    /// Where GHDL and Yosys are.
+    #[cfg(feature = "hdl")]
+    HdlTools,
 }
 
 #[derive(Debug, Clone)]
@@ -257,6 +261,14 @@ pub enum Message {
     RenameCircuit(String),
     DeleteCircuit,
     MakeMain,
+    /// Turn a circuit synthesized from HDL into an ordinary, editable one.
+    ConvertCircuit(String),
+    // HDL
+    /// Show or hide the HDL features.
+    SetHdlEnabled(bool),
+    SetHdlAuto(bool),
+    #[cfg(feature = "hdl")]
+    Hdl(crate::hdl::Msg),
     // Properties
     Prop(props::Edit),
     TraceComponent(CompId),
@@ -333,6 +345,8 @@ pub struct App {
     /// Where the settings are saved; `None` keeps them for this session.
     settings_path: Option<PathBuf>,
     system_dark: bool,
+    #[cfg(feature = "hdl")]
+    pub hdl: crate::hdl::Hdl,
 }
 
 impl App {
@@ -404,6 +418,8 @@ impl App {
             settings: settings_path.as_deref().map(Settings::load).unwrap_or_default(),
             settings_path,
             system_dark: false,
+            #[cfg(feature = "hdl")]
+            hdl: crate::hdl::Hdl::default(),
         };
         app.apply_settings();
         app.refresh();
@@ -414,11 +430,11 @@ impl App {
     }
 
     /// Applies and saves new settings.
-    fn change_settings(&mut self, settings: Settings) {
+    pub(crate) fn change_settings(&mut self, settings: Settings) {
         self.settings = settings;
         self.apply_settings();
         if let Some(path) = &self.settings_path
-            && let Err(e) = settings.save(path)
+            && let Err(e) = self.settings.save(path)
         {
             self.status = format!("Could not save the settings to {}: {e}", path.display());
         }
@@ -479,6 +495,10 @@ impl App {
     }
 
     pub fn is_dirty(&self) -> bool {
+        #[cfg(feature = "hdl")]
+        if self.hdl.has_unsaved() {
+            return true;
+        }
         self.history.is_dirty()
     }
 
@@ -523,6 +543,8 @@ impl App {
     /// Recomputes the geometry cache of the active circuit and brings the
     /// simulation of the active root up to date.
     fn refresh(&mut self) {
+        #[cfg(feature = "hdl")]
+        crate::hdl::sync(self);
         if self.project.circuit(&self.loc.circuit).is_none() || self.project.circuit(&self.loc.root).is_none() {
             let main = self.project.main().name.clone();
             self.switch_to(&main, &main, Vec::new());
@@ -577,7 +599,21 @@ impl App {
         c
     }
 
-    fn exec(&mut self, mut cmd: Command) {
+    pub(crate) fn exec(&mut self, mut cmd: Command) {
+        // Circuits synthesized from HDL change only with their sources.
+        let edits = cmd.ops.iter().any(|op| {
+            matches!(
+                op,
+                Op::AddComp(_) | Op::RemoveComp(_) | Op::UpdateComp { .. } | Op::AddWire(_) | Op::RemoveWire(_)
+            )
+        });
+        if edits && self.project.is_hdl(&cmd.circuit) {
+            self.set_status(format!(
+                "“{}” is synthesized from HDL and read-only: edit its sources, or convert it to an ordinary circuit.",
+                cmd.circuit
+            ));
+            return;
+        }
         self.tidy_wires(&mut cmd);
         if self.history.execute(&mut self.project, cmd) {
             self.generation += 1;
@@ -676,8 +712,14 @@ impl App {
         view.scale = new;
     }
 
-    fn set_status(&mut self, s: impl Into<String>) {
+    pub(crate) fn set_status(&mut self, s: impl Into<String>) {
         self.status = s.into();
+    }
+
+    /// Redraws the cached layers of the canvas.
+    #[cfg_attr(not(feature = "hdl"), allow(dead_code))]
+    pub(crate) fn redraw(&mut self) {
+        self.render_version += 1;
     }
 
     /// Makes `circuit` the shown circuit (the instance `inst` of it within
@@ -726,10 +768,18 @@ impl App {
         self.refresh();
         self.fit_view();
         self.set_speed(self.speed);
+        #[cfg(feature = "hdl")]
+        crate::hdl::project_loaded(self);
     }
 
     fn save_to(&mut self, path: PathBuf) -> bool {
         let path = if path.extension().is_none() { path.with_extension(io::EXTENSION) } else { path };
+        #[cfg(feature = "hdl")]
+        {
+            // Sources stay the same files when the project moves.
+            crate::hdl::rebase(&mut self.project, self.path.as_deref(), &path);
+            crate::hdl::save_all(self);
+        }
         match io::save(&self.project, &path) {
             Ok(()) => {
                 self.history.mark_saved();
@@ -888,19 +938,23 @@ impl App {
     }
 
     fn handle(&mut self, message: Message) -> Task<Message> {
-        if !matches!(
-            message,
-            Message::Frame(_)
-                | Message::Menu(_)
-                | Message::Editor(_)
-                | Message::Wave(_)
-                | Message::Key(_)
-                | Message::ResizeMove(_)
-                | Message::StartResize(_)
-                | Message::ResizeEnd
-                | Message::SystemTheme(_)
-                | Message::SetTextSize(_)
-        ) {
+        // Messages of the user close the open menu; those from timers and
+        // background jobs do not.
+        if !self.is_background(&message)
+            && !matches!(
+                message,
+                Message::Frame(_)
+                    | Message::Menu(_)
+                    | Message::Editor(_)
+                    | Message::Wave(_)
+                    | Message::Key(_)
+                    | Message::ResizeMove(_)
+                    | Message::StartResize(_)
+                    | Message::ResizeEnd
+                    | Message::SystemTheme(_)
+                    | Message::SetTextSize(_)
+            )
+        {
             self.menu = None;
         }
         match message {
@@ -1120,10 +1174,10 @@ impl App {
             }
             Message::ToggleGrid => self.show_grid = !self.show_grid,
             Message::ToggleWaveform => self.wave.visible = !self.wave.visible,
-            Message::SetScheme(scheme) => self.change_settings(Settings { scheme, ..self.settings }),
+            Message::SetScheme(scheme) => self.change_settings(Settings { scheme, ..self.settings.clone() }),
             Message::SetTextSize(n) => {
                 let text_size = n.clamp(*TEXT_SIZE_RANGE.start(), *TEXT_SIZE_RANGE.end());
-                self.change_settings(Settings { text_size, ..self.settings });
+                self.change_settings(Settings { text_size, ..self.settings.clone() });
             }
             Message::SystemTheme(mode) => {
                 self.system_dark = mode == iced::theme::Mode::Dark;
@@ -1175,6 +1229,9 @@ impl App {
                     self.navigate(&crumbs[depth].0, &root, inst);
                 }
             }
+            Message::RenameCircuit(_) if self.project.is_hdl(&self.circuit().name) => {
+                self.set_status("A circuit synthesized from HDL is named after its entity: rename it in the sources.");
+            }
             Message::RenameCircuit(new) => {
                 let old = self.circuit().name.clone();
                 let new_trim = new.trim().to_string();
@@ -1212,6 +1269,12 @@ impl App {
                 } else {
                     let mut cmd = Command::new("Delete circuit", &name);
                     cmd.push(Op::RemoveCircuit(index, Box::new(self.circuit().clone())));
+                    // Not synthesized again.
+                    if self.project.hdl.tops.contains(&name) {
+                        let mut after = self.project.hdl.clone();
+                        after.tops.retain(|t| *t != name);
+                        cmd.push(Op::SetHdl { before: Box::new(self.project.hdl.clone()), after: Box::new(after) });
+                    }
                     let main = self.project.main().name.clone();
                     self.navigate(&main, &main, Vec::new());
                     self.views.remove(&name);
@@ -1221,7 +1284,9 @@ impl App {
             Message::MakeMain => {
                 let name = self.circuit().name.clone();
                 let used = self.project.circuits.iter().any(|c| c.subcircuit_refs().any(|r| r == name));
-                if used {
+                if self.project.is_hdl(&name) {
+                    self.set_status("A circuit synthesized from HDL is always a subcircuit: convert it first.");
+                } else if used {
                     self.set_status(format!(
                         "“{name}” is used as a subcircuit: remove its instances before making it the main circuit."
                     ));
@@ -1236,6 +1301,34 @@ impl App {
                     self.set_status(format!("“{name}” is now the main circuit"));
                 }
             }
+
+            Message::ConvertCircuit(name) => {
+                if let Some(i) = self.project.circuit_index(&name)
+                    && self.project.circuits[i].hdl.is_some()
+                {
+                    let old = self.project.circuits[i].clone();
+                    let new = lb_core::circuit::Circuit { hdl: None, ..old.clone() };
+                    let mut cmd = Command::new("Convert to circuit", &name);
+                    cmd.push(Op::RemoveCircuit(i, Box::new(old)));
+                    cmd.push(Op::AddCircuit(i, Box::new(new)));
+                    if self.project.hdl.tops.contains(&name) {
+                        let mut after = self.project.hdl.clone();
+                        after.tops.retain(|t| *t != name);
+                        cmd.push(Op::SetHdl { before: Box::new(self.project.hdl.clone()), after: Box::new(after) });
+                    }
+                    self.exec(cmd);
+                    self.set_status(format!("“{name}” is now an ordinary circuit"));
+                }
+            }
+
+            // ---- HDL
+            Message::SetHdlEnabled(on) => {
+                self.change_settings(Settings { hdl: on, ..self.settings.clone() });
+                self.refresh();
+            }
+            Message::SetHdlAuto(on) => self.change_settings(Settings { hdl_auto: on, ..self.settings.clone() }),
+            #[cfg(feature = "hdl")]
+            Message::Hdl(m) => return crate::hdl::update(self, m),
 
             // ---- properties
             Message::ClearKeyboard(id) => {
@@ -1361,6 +1454,12 @@ impl App {
                             Split::Left => self.left_w = (self.left_w + dx).clamp(160.0, 520.0),
                             Split::Right => self.right_w = (self.right_w - dx).clamp(220.0, 640.0),
                             Split::Wave => self.wave_h = (self.wave_h - dy).clamp(90.0, 700.0),
+                            #[cfg(feature = "hdl")]
+                            Split::HdlSources => {
+                                self.hdl.sources_w = (self.hdl.sources_w + dx).clamp(160.0, 700.0);
+                            }
+                            #[cfg(feature = "hdl")]
+                            Split::HdlLog => self.hdl.log_w = (self.hdl.log_w - dx).clamp(160.0, 900.0),
                         }
                     }
                     *last = Some(p);
@@ -1369,6 +1468,16 @@ impl App {
             Message::ResizeEnd => self.resizing = None,
         }
         Task::none()
+    }
+
+    /// A message not caused by the user.
+    fn is_background(&self, message: &Message) -> bool {
+        #[cfg(feature = "hdl")]
+        if let Message::Hdl(m) = message {
+            return matches!(m, crate::hdl::Msg::Poll | crate::hdl::Msg::Done(..));
+        }
+        let _ = message;
+        false
     }
 
     fn after_history(&mut self, circuit: &str, status: String) {
@@ -1793,6 +1902,15 @@ impl App {
                 let ctrl = modifiers.command();
                 let shift = modifiers.shift();
                 let msg = match key.as_ref() {
+                    // The circuit is hidden in the HDL view: only the file shortcuts.
+                    Key::Character(c) if self.hdl_shown() => match (ctrl, shift, c.to_lowercase().as_str()) {
+                        (true, false, "s") => Some(Message::Save),
+                        (true, true, "s") => Some(Message::SaveAs),
+                        (true, _, "o") => Some(Message::Open),
+                        (true, _, "n") => Some(Message::New),
+                        _ => None,
+                    },
+                    k if self.hdl_shown() && k != Key::Named(Named::Escape) => None,
                     Key::Named(Named::Space) => {
                         if !repeat {
                             self.space_down = true;
@@ -1846,7 +1964,7 @@ impl App {
                     return self.update(m);
                 }
             }
-            keyboard::Event::KeyReleased { key: Key::Named(Named::Space), .. } => {
+            keyboard::Event::KeyReleased { key: Key::Named(Named::Space), .. } if !self.hdl_shown() => {
                 let toggle = self.space_down && !self.space_panned;
                 self.space_down = false;
                 if toggle {
@@ -1869,6 +1987,8 @@ impl App {
         if self.running || self.pending_settle {
             subs.push(window::frames().map(Message::Frame));
         }
+        #[cfg(feature = "hdl")]
+        subs.push(crate::hdl::subscription(self));
         if self.resizing.is_some() {
             subs.push(iced::event::listen_with(|event, _status, _window| match event {
                 iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => Some(Message::ResizeMove(position)),
@@ -1882,14 +2002,19 @@ impl App {
     // ---- view ------------------------------------------------------------------------
 
     pub fn view(&self) -> Element<'_, Message> {
-        let body = row![
-            container(palette::view(self)).width(self.left_w).height(Fill).style(theme::window),
-            splitter(Split::Left, self.resizing.is_some_and(|r| r.0 == Split::Left)),
-            self.center(),
-            splitter(Split::Right, self.resizing.is_some_and(|r| r.0 == Split::Right)),
-            container(props::view(self)).width(self.right_w).height(Fill).style(theme::window),
-        ]
-        .height(Fill);
+        let body: Element<Message> = if self.hdl_shown() {
+            self.hdl_view()
+        } else {
+            row![
+                container(palette::view(self)).width(self.left_w).height(Fill).style(theme::window),
+                splitter(Split::Left, self.is_resizing(Split::Left)),
+                self.center(),
+                splitter(Split::Right, self.is_resizing(Split::Right)),
+                container(props::view(self)).width(self.right_w).height(Fill).style(theme::window),
+            ]
+            .height(Fill)
+            .into()
+        };
 
         let base = column![self.menubar(), self.toolbar(), theme::hline(), body, theme::hline(), self.statusbar()]
             .height(Fill);
@@ -1901,6 +2026,26 @@ impl App {
             layers.push(self.modal_overlay(modal));
         }
         stack(layers).into()
+    }
+
+    /// The panel boundary being dragged is `which`.
+    pub(crate) fn is_resizing(&self, which: Split) -> bool {
+        self.resizing.is_some_and(|r| r.0 == which)
+    }
+
+    /// The HDL view (sources, editor, messages) replaces the circuit view.
+    pub(crate) fn hdl_shown(&self) -> bool {
+        #[cfg(feature = "hdl")]
+        return self.settings.hdl && self.hdl.panel;
+        #[cfg(not(feature = "hdl"))]
+        false
+    }
+
+    fn hdl_view(&self) -> Element<'_, Message> {
+        #[cfg(feature = "hdl")]
+        return crate::hdl::view::workspace(self);
+        #[cfg(not(feature = "hdl"))]
+        Space::new().into()
     }
 
     fn center(&self) -> Element<'_, Message> {
@@ -1925,7 +2070,26 @@ impl App {
                 button(name).on_press(Message::Breadcrumb(i)).padding([3, 8]).style(theme::tool)
             });
         }
-        let location = container(trail)
+        // Mirror of “‹ Circuit” in the HDL view.
+        #[cfg_attr(not(feature = "hdl"), allow(unused_mut))]
+        let mut location_row = row![trail, Space::new().width(Fill)].align_y(Alignment::Center);
+        #[cfg(feature = "hdl")]
+        if self.settings.hdl {
+            location_row = location_row.push(
+                button(
+                    row![
+                        text("HDL").size(theme::fs(13.0)),
+                        icons::icon(Icon::ChevronRight, 16.0, theme::colors().text)
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center),
+                )
+                .on_press(Message::Hdl(crate::hdl::Msg::TogglePanel))
+                .padding([4, 8])
+                .style(theme::tool),
+            );
+        }
+        let location = container(location_row)
             .padding([0, 6])
             .height(theme::fs(32.0))
             .width(Fill)
@@ -1960,6 +2124,9 @@ impl App {
         if let Some(banner) = banner {
             content = content.push(container(banner).padding(6).width(Fill).style(theme::view));
         }
+        if let Some(banner) = self.hdl_banner() {
+            content = content.push(container(banner).padding(6).width(Fill).style(theme::view));
+        }
         content = content.push(canvas_el.map(Message::Editor));
         if self.wave.visible {
             content = content
@@ -1967,6 +2134,60 @@ impl App {
                 .push(self.waveform_panel());
         }
         content.width(Fill).height(Fill).into()
+    }
+
+    /// Above a circuit synthesized from HDL: it is read-only, and whether it
+    /// is out of date, with the source it comes from.
+    fn hdl_banner(&self) -> Option<Element<'_, Message>> {
+        let c = self.circuit();
+        let h = c.hdl.as_ref()?;
+        let name = c.name.clone();
+        let push = |label: &str, msg: Message, default: bool| {
+            button(text(label.to_string()).size(theme::fs(13.0)))
+                .on_press(msg)
+                .style(if default { theme::default_push } else { theme::push })
+                .padding([3, 12])
+        };
+        // The file and line declaring the entity, when the HDL view is on.
+        #[cfg(feature = "hdl")]
+        let source = self.settings.hdl.then(|| {
+            self.hdl.files.iter().find_map(|f| {
+                f.units.iter().find(|u| u.name.eq_ignore_ascii_case(&name)).map(|u| (f.path.clone(), u.line))
+            })
+        });
+        #[cfg(feature = "hdl")]
+        let source = source.flatten();
+        let (emblem, title, detail) = if h.stale {
+            (Emblem::Warning, "Out of date", "The sources changed since the last synthesis.")
+        } else {
+            (Emblem::Info, "", "Read only: this circuit is generated from HDL source code.")
+        };
+        let mut line = row![].spacing(8).align_y(Alignment::Center);
+        if !title.is_empty() {
+            line = line.push(text(title).size(theme::fs(13.0)).font(theme::FONT_MEDIUM));
+        }
+        line = line.push(text(detail).size(theme::fs(13.0)).width(Fill));
+        #[cfg(feature = "hdl")]
+        if h.stale && self.settings.hdl && self.hdl.running().is_none() {
+            line = line.push(push("Synthesize", Message::Hdl(crate::hdl::Msg::Synthesize), true));
+        }
+        #[cfg(feature = "hdl")]
+        if let Some((path, at)) = source {
+            line = line.push(push("Edit source", Message::Hdl(crate::hdl::Msg::OpenAt(path, at, 1)), !h.stale));
+        }
+        line = line.push(push("Convert to circuit", Message::ConvertCircuit(name), false));
+        Some(theme::message(emblem, line).padding(Padding { top: 4.0, right: 4.0, bottom: 4.0, left: 10.0 }).into())
+    }
+
+    /// The menus shown in the menu bar.
+    fn menus(&self) -> Vec<(&'static str, Menu)> {
+        let mut m =
+            vec![("File", Menu::File), ("Edit", Menu::Edit), ("Simulation", Menu::Simulation), ("View", Menu::View)];
+        if cfg!(feature = "hdl") && self.settings.hdl {
+            m.push(("HDL", Menu::Hdl));
+        }
+        m.push(("Settings", Menu::Settings));
+        m
     }
 
     fn waveform_panel(&self) -> Element<'_, Message> {
@@ -2029,7 +2250,7 @@ impl App {
         let mut dropdown = dropdown;
         let bar_h = theme::fs(26.0);
         let mut items = row![].spacing(1).align_y(Alignment::Start);
-        for (label, m) in MENUS {
+        for (label, m) in self.menus() {
             let color = if ghost { iced::Color::TRANSPARENT } else { theme::colors().text };
             let b = button(text(label).size(theme::fs(13.0)).color(color).height(Fill).align_y(Alignment::Center))
                 .height(bar_h)
@@ -2159,6 +2380,28 @@ impl App {
                 sep(),
                 toggle("Zero-delay mode", self.zero_delay, Message::SetZeroDelay(!self.zero_delay)),
             ],
+            #[cfg(feature = "hdl")]
+            Menu::Hdl => {
+                use crate::hdl::Msg as H;
+                use lb_hdl::lang::Lang;
+                let idle = self.hdl.running().is_none();
+                let sources = !self.project.hdl.sources.is_empty();
+                vec![
+                    toggle("HDL view", self.hdl.panel, Message::Hdl(H::TogglePanel)),
+                    sep(),
+                    entry(Some(Icon::Open), "Open files…", "", Message::Hdl(H::AddFiles), true),
+                    entry(Some(Icon::New), "New VHDL file…", "", Message::Hdl(H::NewFile(Lang::Vhdl)), true),
+                    entry(Some(Icon::New), "New Verilog file…", "", Message::Hdl(H::NewFile(Lang::Verilog)), true),
+                    sep(),
+                    entry(Some(Icon::Compile), "Compile", "", Message::Hdl(H::Compile), idle && sources),
+                    entry(Some(Icon::Chip), "Synthesize", "", Message::Hdl(H::Synthesize), idle && sources),
+                    entry(Some(Icon::Stop), "Cancel", "", Message::Hdl(H::Cancel), !idle),
+                    sep(),
+                    entry(None, "HDL tools…", "", Message::Hdl(H::ShowTools), true),
+                ]
+            }
+            #[cfg(not(feature = "hdl"))]
+            Menu::Hdl => Vec::new(),
             Menu::View => vec![
                 entry(Some(Icon::Fit), "Zoom to fit", "Ctrl+0", Message::FitView, true),
                 entry(None, "Zoom in", "Ctrl++", Message::ZoomIn, true),
@@ -2189,6 +2432,21 @@ impl App {
                 for n in sizes {
                     let label = if n == 100 { "100% (default)".to_string() } else { format!("{n}%") };
                     items.push(choice(&label, n == size, Message::SetTextSize(n)));
+                }
+                if cfg!(feature = "hdl") {
+                    let s = &self.settings;
+                    items.push(sep());
+                    items.push(heading("Features"));
+                    items.push(toggle("Enable HDL", s.hdl, Message::SetHdlEnabled(!s.hdl)));
+                    if s.hdl {
+                        items.push(toggle(
+                            "Synthesize when a source is saved",
+                            s.hdl_auto,
+                            Message::SetHdlAuto(!s.hdl_auto),
+                        ));
+                        #[cfg(feature = "hdl")]
+                        items.push(entry(None, "HDL tools…", "", Message::Hdl(crate::hdl::Msg::ShowTools), true));
+                    }
                 }
                 items
             }
@@ -2244,6 +2502,13 @@ impl App {
             ]
             .spacing(20)
             .into(),
+            #[cfg(feature = "hdl")]
+            Modal::HdlTools => column![
+                crate::hdl::view::tools(self),
+                row![Space::new().width(Fill), dialog_button("Close", Message::ModalCancel, true)],
+            ]
+            .spacing(20)
+            .into(),
         };
         let dim = container(iced::widget::center(opaque(
             container(card).padding([18, 20]).width(theme::fs(460.0)).style(theme::dialog),
@@ -2272,6 +2537,14 @@ impl App {
         let tbl = |i: Icon, label: &str, msg: Message, enabled: bool| {
             button(theme::icon_label(i, label, enabled)).on_press_maybe(enabled.then_some(msg)).padding([5, 8])
         };
+        // The HDL view has no circuit to edit or simulate.
+        if self.hdl_shown() {
+            return container(row(self.hdl_toolbar()).spacing(3).height(theme::fs(32.0)).align_y(Alignment::Center))
+                .padding([2, 6])
+                .width(Fill)
+                .style(theme::header)
+                .into();
+        }
         let has_sim = self.sim().is_some();
         let transform = !self.selection.comps.is_empty() || matches!(self.tool, Tool::Place { .. });
         let run = if self.running {
@@ -2347,6 +2620,13 @@ impl App {
         .into()
     }
 
+    fn hdl_toolbar(&self) -> Vec<Element<'_, Message>> {
+        #[cfg(feature = "hdl")]
+        return crate::hdl::view::toolbar(self);
+        #[cfg(not(feature = "hdl"))]
+        Vec::new()
+    }
+
     fn statusbar(&self) -> Element<'_, Message> {
         let sim_info = match self.sim() {
             Some(s) => {
@@ -2392,14 +2672,6 @@ impl App {
     }
 }
 
-const MENUS: [(&str, Menu); 5] = [
-    ("File", Menu::File),
-    ("Edit", Menu::Edit),
-    ("Simulation", Menu::Simulation),
-    ("View", Menu::View),
-    ("Settings", Menu::Settings),
-];
-
 /// Width of the grab area of a splitter, beside its hairline.
 const GRIP: f32 = 4.0;
 
@@ -2409,27 +2681,44 @@ pub enum Split {
     Left,
     Right,
     Wave,
+    /// Between the sources and the editor of the HDL view.
+    #[cfg(feature = "hdl")]
+    HdlSources,
+    /// Between the editor and the messages of the HDL view.
+    #[cfg(feature = "hdl")]
+    HdlLog,
 }
 
 /// A drag handle between two panels: a hairline between the view and a
 /// strip of the panel colour, so that it reads as a plain separator.
-fn splitter<'a>(which: Split, active: bool) -> Element<'a, Message> {
+pub(crate) fn splitter<'a>(which: Split, active: bool) -> Element<'a, Message> {
     let color = if active { theme::colors().accent } else { theme::colors().separator };
     let line = move |_: &iced::Theme| container::Style {
         background: Some(iced::Background::Color(color)),
         ..Default::default()
     };
+    let left_panel = || -> Element<Message> {
+        row![
+            container(Space::new()).width(GRIP).height(Fill).style(theme::window),
+            container(Space::new()).width(1).height(Fill).style(line),
+        ]
+        .into()
+    };
+    let right_panel = || -> Element<Message> {
+        row![
+            container(Space::new()).width(1).height(Fill).style(line),
+            container(Space::new()).width(GRIP).height(Fill).style(theme::window),
+        ]
+        .into()
+    };
     let area: Element<Message> = match which {
-        Split::Left => row![
-            container(Space::new()).width(GRIP).height(Fill).style(theme::window),
-            container(Space::new()).width(1).height(Fill).style(line),
-        ]
-        .into(),
-        Split::Right => row![
-            container(Space::new()).width(1).height(Fill).style(line),
-            container(Space::new()).width(GRIP).height(Fill).style(theme::window),
-        ]
-        .into(),
+        Split::Left => left_panel(),
+        Split::Right => right_panel(),
+        #[cfg(feature = "hdl")]
+        Split::HdlSources => left_panel(),
+        #[cfg(feature = "hdl")]
+        Split::HdlLog => right_panel(),
+        // Panels under the canvas.
         Split::Wave => column![
             container(Space::new()).width(Fill).height(1).style(line),
             container(Space::new()).width(Fill).height(GRIP).style(theme::window),

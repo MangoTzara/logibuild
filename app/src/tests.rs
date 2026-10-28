@@ -486,7 +486,14 @@ fn the_waveform_shows_ten_seconds_at_the_current_speed() {
 #[test]
 fn settings_round_trip_and_ignore_unknown_values() {
     use crate::settings::{Scheme, Settings};
-    let s = Settings { scheme: Scheme::Dark, text_size: 125 };
+    let s = Settings {
+        scheme: Scheme::Dark,
+        text_size: 125,
+        hdl: true,
+        hdl_auto: false,
+        ghdl: "/opt/oss cad/bin/ghdl".into(),
+        yosys: String::new(),
+    };
     assert_eq!(Settings::parse(&s.to_text()), s);
     let odd = Settings::parse("scheme = purple\ntext_size = 300\nother = 1\nnot a setting");
     assert_eq!(odd, Settings::default());
@@ -784,3 +791,73 @@ fn tmp_profile_edit_cycle() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 // TEMP-PROFILE-END
+
+#[test]
+fn circuits_synthesized_from_hdl_are_read_only_until_converted() {
+    use lb_core::circuit::{Circuit, HdlInfo, Project};
+    let mut main = Circuit::new("Main");
+    let sub = main.add(Kind::Subcircuit, (0, 0));
+    main.component_mut(sub).unwrap().props.circuit = "alu".into();
+    let mut alu = Circuit::new("alu");
+    alu.add(Kind::Input, (0, 0));
+    alu.hdl = Some(HdlInfo { digest: "d".into(), stale: false });
+    let mut p = Project::new(main);
+    p.circuits.push(alu);
+    p.hdl.tops.push("alu".into());
+    let dir = std::env::temp_dir().join(format!("lb_app_ro_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("p.lbc");
+    lb_core::io::save(&p, &path).unwrap();
+
+    let mut app = app();
+    let _ = app.update(Message::OpenPicked(Some(path)));
+    let _ = app.update(Message::OpenCircuit("alu".into()));
+    place_refused(&mut app);
+    let _ = app.update(Message::RenameCircuit("other".into()));
+    assert!(app.project.circuit("alu").is_some(), "named after its entity");
+    let _ = app.update(Message::MakeMain);
+    assert_eq!(app.project.main().name, "Main");
+
+    let _ = app.update(Message::ConvertCircuit("alu".into()));
+    assert!(app.project.circuit("alu").unwrap().hdl.is_none());
+    assert!(app.project.hdl.tops.is_empty(), "no longer synthesized");
+    let n = app.circuit().components.len();
+    let _ = app.update(Message::PickTool(Kind::And));
+    ev(&mut app, EditorEvent::Place { pos: (10, 10) });
+    assert_eq!(app.circuit().components.len(), n + 1, "editable once converted");
+    // Undo brings back the synthesized circuit in one step.
+    let _ = app.update(Message::Undo);
+    let _ = app.update(Message::Undo);
+    assert!(app.project.circuit("alu").unwrap().hdl.is_some());
+    assert_eq!(app.project.hdl.tops, ["alu"]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Placing a component in the shown (read-only) circuit does nothing.
+fn place_refused(app: &mut App) {
+    let n = app.circuit().components.len();
+    let _ = app.update(Message::PickTool(Kind::And));
+    ev(app, EditorEvent::Place { pos: (10, 10) });
+    assert_eq!(app.circuit().components.len(), n);
+    assert!(app.status.contains("read-only"), "{}", app.status);
+    escape(app);
+}
+
+#[test]
+fn frozen_route_can_go_back_to_automatic() {
+    let mut app = app();
+    let i = place(&mut app, Kind::Input, (0, 0));
+    let n = place(&mut app, Kind::Not, (6, 4));
+    connect(&mut app, (i, "out"), (n, "in"));
+    let wire = app.circuit().wires[0].clone();
+    ev(&mut app, EditorEvent::SelectWire { wire: wire.clone(), additive: false });
+    // What the Freeze route button sends.
+    let pts = app.wire_route(&wire).unwrap().to_vec();
+    assert!(pts.len() > 2, "{pts:?}");
+    let frozen = crate::routing::tidy_path(pts[0], &pts[1..pts.len() - 1], pts[pts.len() - 1]);
+    let _ = app.update(Message::SetWirePath(wire, frozen));
+    let sel = app.selection.wires[0].clone();
+    assert!(app.circuit().wires.contains(&sel), "selection follows the frozen wire");
+    let _ = app.update(Message::SetWirePath(sel, Vec::new()));
+    assert!(app.circuit().wires[0].path.is_empty(), "{:?}", app.circuit().wires);
+}

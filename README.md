@@ -11,6 +11,8 @@ A digital logic circuit editor and simulator inspired by Logisim, written in Rus
 * Automatic orthogonal wire routing around components, with editable waypoints.
 * Integrated waveform viewer with CSV/VCD export (GTKWave).
 * Unlimited undo/redo, copy/paste, alignment; text project files that diff well in git.
+* Optional VHDL and Verilog support: an editor for the sources, compilation and synthesis with
+  GHDL and Yosys into readable circuits (operators stay whole, hierarchy becomes subcircuits).
 
 ## Building
 
@@ -87,9 +89,14 @@ Rendering uses Metal; nothing else is needed.
 The first six are small enough to read at a glance; the last two are larger designs built from
 several subcircuits.
 
+`examples/hdl/hdl_demo.lbc` comes with VHDL and Verilog sources (a counter on a 7-segment
+digit, an ALU, a traffic light, an LFSR, a RAM): enable HDL in the settings, then
+**HDL → Synthesize** (GHDL and Yosys are needed, see the [user guide](docs/USER_GUIDE.md)).
+
+
 ## Documentation
 
-* [User guide](docs/USER_GUIDE.md) — editing, simulation, waveforms, subcircuits, shortcuts
+* [User guide](docs/USER_GUIDE.md) — editing, simulation, waveforms, subcircuits, HDL, shortcuts
 * [Component reference](docs/COMPONENTS.md) — every component with its pins and properties
 * [File format](docs/FILE_FORMAT.md) — `.lbc` projects and `.hex` memory images
 * [Architecture](docs/ARCHITECTURE.md) — crates, simulation engine, router, rendering, tests
@@ -108,7 +115,8 @@ cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 
 ```text
 core/      lb_core: signals, components, netlist, simulator, trace, file I/O, undo/redo
-app/       logibuild: iced editor (canvas, router, panels, waveform, theme)
+hdl/       lb_hdl: GHDL/Yosys toolchain, import and layout of synthesized netlists
+app/       logibuild: iced editor (canvas, router, panels, waveform, theme, HDL panel)
 examples/  example circuits
 docs/      documentation
 ```

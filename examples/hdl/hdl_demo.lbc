@@ -1,0 +1,10 @@
+(
+    version: 1,
+    name: "Main",
+    components: [
+        (id: 1, kind: Text, pos: (0, 0), props: (label: "Settings → Features → HDL, then HDL → Synthesize; place the circuits from Project circuits.")),
+    ],
+    wires: [
+    ],
+    hdl: (sources: ["counter.vhd", "seg7.vhd", "display_counter.vhd", "alu.vhd", "traffic_light.v", "lfsr.v", "ram16x8.v"], tops: ["display_counter", "alu", "traffic_light", "lfsr", "ram16x8"]),
+)

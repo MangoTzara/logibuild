@@ -528,7 +528,7 @@ mod tests {
         wire(&mut top, i1, "out", h, "A");
         wire(&mut top, i2, "out", h, "B");
         wire(&mut top, h, "CARRY", o, "in");
-        let p = Project { circuits: vec![top, half_adder()], libraries: vec![] };
+        let p = Project { circuits: vec![top, half_adder()], libraries: vec![], hdl: Default::default() };
         let nl = compile(&p, "top").unwrap();
         // 3 top-level primitives + XOR and AND (inner I/O pins are aliases).
         assert_eq!(nl.comps.len(), 5);
@@ -587,7 +587,7 @@ mod tests {
             let s = add(&mut top, Kind::Subcircuit, "");
             top.component_mut(s).unwrap().props.circuit = "inner".into();
         }
-        let p = Project { circuits: vec![top, inner], libraries: vec![] };
+        let p = Project { circuits: vec![top, inner], libraries: vec![], hdl: Default::default() };
         let nl = compile(&p, "top").unwrap();
         let labels: Vec<_> = nl
             .diagnostics

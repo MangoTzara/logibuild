@@ -210,7 +210,7 @@ pub fn theme() -> Theme {
     if is_dark() { DARK_THEME.clone() } else { LIGHT_THEME.clone() }
 }
 
-const fn alpha(c: Color, a: f32) -> Color {
+pub const fn alpha(c: Color, a: f32) -> Color {
     Color { a, ..c }
 }
 
@@ -334,7 +334,11 @@ pub fn tip<'a, M: 'a>(content: impl Into<Element<'a, M>>, label: impl ToString) 
 /// Inline message (KMessageWidget): tinted background, coloured outline
 /// and emblem.
 pub fn message<'a, M: 'a>(kind: Emblem, content: impl Into<Element<'a, M>>) -> container::Container<'a, M> {
-    let c = if kind == Emblem::Error { colors().negative } else { colors().neutral };
+    let c = match kind {
+        Emblem::Error => colors().negative,
+        Emblem::Warning => colors().neutral,
+        Emblem::Info => colors().link,
+    };
     container(row![icons::emblem(kind, 16.0), content.into()].spacing(8).align_y(Alignment::Center))
         .padding([6, 10])
         .width(Fill)
@@ -445,6 +449,33 @@ pub fn item(selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style 
     }
 }
 
+/// Accent text, for an action inside a list.
+#[cfg_attr(not(feature = "hdl"), allow(dead_code))]
+pub fn link(t: &Theme, status: button::Status) -> button::Style {
+    let mut s = tool(t, status);
+    if status != button::Status::Disabled {
+        s.text_color = colors().link;
+    }
+    s
+}
+
+/// A row of a tree or a list spanning its width: a light background on
+/// hover, the accent tint when selected, no outline.
+#[cfg_attr(not(feature = "hdl"), allow(dead_code))]
+pub fn row_item(selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let bg = match (selected, status) {
+            (true, _) => Some(alpha(colors().accent, 0.18)),
+            (false, button::Status::Hovered) => Some(colors().hover),
+            (false, button::Status::Pressed) => Some(alpha(colors().accent, 0.12)),
+            _ => None,
+        };
+        let mut s = style(bg, colors().text, Color::TRANSPARENT, 0.0);
+        s.snap = true;
+        s
+    }
+}
+
 /// Text acting as a button, without background or frame: `normal`, turning
 /// to `hover` under the mouse.
 pub fn bare(normal: Color, hover: Color) -> impl Fn(&Theme, button::Status) -> button::Style {
@@ -455,6 +486,15 @@ pub fn bare(normal: Color, hover: Color) -> impl Fn(&Theme, button::Status) -> b
             button::Status::Active => normal,
         };
         style(None, fg, Color::TRANSPARENT, 0.0)
+    }
+}
+
+/// A tab of a tab bar: the active one takes the colour of the view below it.
+#[cfg_attr(not(feature = "hdl"), allow(dead_code))]
+pub fn tab(active: bool) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        background: Some(Background::Color(if active { colors().view } else { colors().window })),
+        ..Default::default()
     }
 }
 
@@ -509,6 +549,15 @@ pub fn text_area(theme: &Theme, status: text_editor::Status) -> text_editor::Sty
         value: s.value,
         selection: s.selection,
     }
+}
+
+/// Source code area filling its pane: like [`text_area`] without the frame.
+#[cfg_attr(not(feature = "hdl"), allow(dead_code))]
+pub fn code_area(theme: &Theme, status: text_editor::Status) -> text_editor::Style {
+    let mut s = text_area(theme, status);
+    s.background = Background::Color(colors().view);
+    s.border = Border::default();
+    s
 }
 
 /// Combo box, styled like a push button.

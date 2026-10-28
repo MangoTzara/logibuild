@@ -1,0 +1,11 @@
+[package]
+name = "lb_hdl"
+description = "LogiBuild HDL support: VHDL/Verilog toolchain (GHDL, Yosys) and import of synthesized netlists"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+lb_core.workspace = true
+serde_json = { version = "1", features = ["preserve_order"] }
