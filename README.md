@@ -19,10 +19,22 @@ A digital logic circuit editor and simulator inspired by Logisim, written in Rus
 LogiBuild needs Rust 1.97 or later (edition 2024), installed with [rustup](https://rustup.rs).
 The same commands then build and run it on every platform:
 
+Empty project:
+
 ```bash
-cargo run --release -p logibuild                                 # empty project
-cargo run --release -p logibuild -- examples/game_of_life.lbc    # open a file
-cargo run --release -p logibuild -- --run examples/stopwatch.lbc # open and run
+cargo run --release -p logibuild
+```
+
+Open a file:
+
+```bash
+cargo run --release -p logibuild -- examples/game_of_life.lbc
+```
+
+Open and run:
+
+```bash
+cargo run --release -p logibuild -- --run examples/game_of_life.lbc
 ```
 
 The executable is `target/release/logibuild` (`logibuild.exe` on Windows); it embeds its fonts
@@ -31,7 +43,9 @@ and needs no other files. Each platform needs a few system packages first.
 ### Linux
 
 A C toolchain, `pkg-config` and the headers for keyboard input, Wayland and X11, plus a Vulkan
-driver. On Debian and Ubuntu:
+driver.
+
+On Debian and Ubuntu:
 
 ```bash
 sudo apt install build-essential pkg-config libxkbcommon-dev libwayland-dev libx11-dev \
