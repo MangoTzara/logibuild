@@ -6,6 +6,7 @@ mod canvas;
 mod elide;
 #[cfg(feature = "hdl")]
 mod hdl;
+mod help;
 mod icons;
 mod palette;
 mod props;

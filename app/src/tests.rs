@@ -27,9 +27,13 @@ fn place(app: &mut App, kind: Kind, pos: (i32, i32)) -> u32 {
 }
 
 fn escape(app: &mut App) {
+    press_named(app, iced::keyboard::key::Named::Escape);
+}
+
+fn press_named(app: &mut App, key: iced::keyboard::key::Named) {
     let _ = app.update(Message::Key(iced::keyboard::Event::KeyPressed {
-        key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
-        modified_key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+        key: iced::keyboard::Key::Named(key),
+        modified_key: iced::keyboard::Key::Named(key),
         physical_key: iced::keyboard::key::Physical::Unidentified(iced::keyboard::key::NativeCode::Unidentified),
         location: iced::keyboard::Location::Standard,
         modifiers: iced::keyboard::Modifiers::empty(),
@@ -860,4 +864,20 @@ fn frozen_route_can_go_back_to_automatic() {
     assert!(app.circuit().wires.contains(&sel), "selection follows the frozen wire");
     let _ = app.update(Message::SetWirePath(sel, Vec::new()));
     assert!(app.circuit().wires[0].path.is_empty(), "{:?}", app.circuit().wires);
+}
+
+#[test]
+fn f1_shows_the_documentation_of_the_selected_component() {
+    use crate::app::Modal;
+    use iced::keyboard::key::Named;
+    let mut app = app();
+    let _ = place(&mut app, Kind::Counter, (0, 0));
+    press_named(&mut app, Named::F1);
+    assert_eq!(app.modal, Some(Modal::Help(Kind::Counter)));
+    escape(&mut app);
+    assert_eq!(app.modal, None);
+    // While placing, the component being placed.
+    let _ = app.update(Message::PickTool(Kind::Ram));
+    press_named(&mut app, Named::F1);
+    assert_eq!(app.modal, Some(Modal::Help(Kind::Ram)));
 }

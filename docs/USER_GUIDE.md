@@ -79,6 +79,8 @@ A waypoint just added with Alt+click stays until you drag it.
 The right panel shows the properties of the selected component (label, width, number of
 inputs, clock period, edge, memory contents, …). Changes apply immediately and can be
 undone. Each component has an optional **Delay** that overrides the default gate delay.
+The **?** next to the name of the component shows its documentation: what it does, its pins
+and its properties, from [COMPONENTS.md](COMPONENTS.md).
 
 With nothing selected, the panel shows the circuit: its name (editable), its terminals
 when used as a subcircuit, compilation warnings (pins of different widths on one net,

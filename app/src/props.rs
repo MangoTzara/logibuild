@@ -286,8 +286,15 @@ fn numbers(range: std::ops::RangeInclusive<u8>) -> Vec<u8> {
 }
 
 fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
+    let help = theme::tip(
+        button(theme::icon_label(Icon::Help, "", true))
+            .on_press(Message::ShowHelp(c.kind))
+            .padding(4)
+            .style(theme::tool),
+        "Documentation (F1)",
+    );
     let mut col = column![
-        title(c.kind.name()),
+        row![title(c.kind.name()), Space::new().width(Fill), help].align_y(Alignment::Center),
         note(format!(
             "ID {} · Position ({}, {}) · Rotation {}°{}",
             c.id,

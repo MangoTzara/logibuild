@@ -59,6 +59,7 @@ icons! {
     Search => r##"<circle cx="6.5" cy="6.5" r="4"/><path d="m9.5 9.5 5 5"/>"##,
     Compile => r##"<circle cx="8" cy="8" r="6.5"/><path d="m5 8.2 2 2 4-4.2" stroke-linecap="round"/>"##,
     Chip => r##"<path d="M4.5 4.5h7v7h-7z"/><path d="M6.5 1.5v3M9.5 1.5v3M6.5 11.5v3M9.5 11.5v3M1.5 6.5h3M1.5 9.5h3M11.5 6.5h3M11.5 9.5h3"/>"##,
+    Help => r##"<circle cx="8" cy="8" r="6.5"/><path d="M6.1 6.3a2 2 0 1 1 2.6 1.9c-.45.2-.7.55-.7 1v.5" stroke-linecap="round"/><circle cx="8" cy="11.6" r=".7" fill="#000" stroke="none"/>"##,
     Stop => r##"<path d="M3.5 3.5h9v9h-9z" fill="#000"/>"##,
     CheckOff => r##"<rect x="2.5" y="2.5" width="11" height="11" rx="2"/>"##,
     CheckOn => r##"<rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="m5 8.2 2 2 4-4.2" stroke-width="1.5" stroke-linecap="round"/>"##,

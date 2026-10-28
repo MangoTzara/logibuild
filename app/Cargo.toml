@@ -14,5 +14,5 @@ hdl = ["dep:lb_hdl"]
 [dependencies]
 lb_core.workspace = true
 lb_hdl = { workspace = true, optional = true }
-iced = { version = "0.14", features = ["canvas", "tokio", "svg", "advanced"] }
+iced = { version = "0.14", features = ["canvas", "tokio", "svg", "advanced", "markdown"] }
 rfd = "0.17"

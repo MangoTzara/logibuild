@@ -187,6 +187,8 @@ pub enum After {
 pub enum Modal {
     Unsaved(After),
     Message(String),
+    /// The documentation of a component (its items in [`App::help`]).
+    Help(Kind),
     /// Where GHDL and Yosys are.
     #[cfg(feature = "hdl")]
     HdlTools,
@@ -206,6 +208,8 @@ pub enum Message {
     ModalSave,
     ModalDiscard,
     ModalCancel,
+    /// Show the documentation of a component.
+    ShowHelp(Kind),
     CloseRequested,
     Quit,
     // Edit
@@ -324,6 +328,8 @@ pub struct App {
     pub wave: WaveView,
     pub canvas_size: Size,
     pub modal: Option<Modal>,
+    /// The documentation shown by [`Modal::Help`], parsed.
+    help: Vec<iced::widget::markdown::Item>,
     after_save: Option<After>,
     pub show_grid: bool,
     /// Text being typed in property fields, by key.
@@ -400,6 +406,7 @@ impl App {
             wave: WaveView::default(),
             canvas_size: Size::new(800.0, 600.0),
             modal: None,
+            help: Vec::new(),
             after_save: None,
             show_grid: true,
             drafts: HashMap::new(),
@@ -1016,6 +1023,12 @@ impl App {
                 }
             }
             Message::ModalCancel => self.modal = None,
+            Message::ShowHelp(kind) => {
+                if let Some(doc) = crate::help::section(kind) {
+                    self.help = iced::widget::markdown::parse(doc).collect();
+                    self.modal = Some(Modal::Help(kind));
+                }
+            }
             Message::CloseRequested | Message::Quit => return self.guard(After::Quit),
 
             // ---- edit
@@ -1870,6 +1883,20 @@ impl App {
     }
 
     fn key(&mut self, ev: keyboard::Event) -> Task<Message> {
+        // F1: the documentation of the component being placed or selected.
+        if let keyboard::Event::KeyPressed { key: Key::Named(Named::F1), .. } = &ev
+            && self.modal.is_none()
+            && !self.hdl_shown()
+        {
+            let kind = match &self.tool {
+                Tool::Place { kind, .. } => Some(*kind),
+                _ if self.selection.comps.len() == 1 => {
+                    self.selection.comps.first().and_then(|&id| self.circuit().component(id)).map(|c| c.kind)
+                }
+                _ => None,
+            };
+            return kind.map_or(Task::none(), |k| self.update(Message::ShowHelp(k)));
+        }
         // A selected keyboard component takes the keys, except shortcuts
         // with Ctrl or Alt.
         if let keyboard::Event::KeyPressed { key, modifiers, text, .. } = &ev
@@ -2456,6 +2483,25 @@ impl App {
         mouse_area(positioned).on_press(Message::Menu(None)).into()
     }
 
+    /// The documentation of [`Modal::Help`], in the colours of the app.
+    fn help_view(&self) -> Element<'_, Message> {
+        use iced::widget::markdown;
+        let c = theme::colors();
+        let style = markdown::Style {
+            font: theme::FONT,
+            inline_code_highlight: markdown::Highlight {
+                background: theme::alpha(c.text, 0.07).into(),
+                border: iced::border::rounded(3),
+            },
+            inline_code_padding: Padding { left: 2.0, right: 2.0, ..Padding::ZERO },
+            inline_code_color: c.text,
+            inline_code_font: iced::Font::MONOSPACE,
+            code_block_font: iced::Font::MONOSPACE,
+            link_color: c.link,
+        };
+        markdown::view(&self.help, markdown::Settings::with_text_size(theme::fs(13.0), style)).map(|_| Message::Noop)
+    }
+
     fn modal_overlay(&self, modal: &Modal) -> Element<'_, Message> {
         let dialog_button = |label: &str, msg: Message, default: bool| {
             button(text(label.to_string()).size(theme::fs(13.0)).width(Fill).align_x(Alignment::Center))
@@ -2502,6 +2548,14 @@ impl App {
             ]
             .spacing(20)
             .into(),
+            Modal::Help(kind) => column![
+                text(kind.name()).size(theme::fs(16.0)).font(theme::FONT_MEDIUM),
+                container(theme::scroll(container(self.help_view()).padding(Padding { right: 12.0, ..Padding::ZERO })))
+                    .max_height(theme::fs(460.0)),
+                row![Space::new().width(Fill), dialog_button("Close", Message::ModalCancel, true)],
+            ]
+            .spacing(14)
+            .into(),
             #[cfg(feature = "hdl")]
             Modal::HdlTools => column![
                 crate::hdl::view::tools(self),
@@ -2510,8 +2564,9 @@ impl App {
             .spacing(20)
             .into(),
         };
+        let width = if matches!(modal, Modal::Help(_)) { 600.0 } else { 460.0 };
         let dim = container(iced::widget::center(opaque(
-            container(card).padding([18, 20]).width(theme::fs(460.0)).style(theme::dialog),
+            container(card).padding([18, 20]).width(theme::fs(width)).style(theme::dialog),
         )))
         .width(Fill)
         .height(Fill)
