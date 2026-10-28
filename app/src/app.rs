@@ -984,6 +984,7 @@ impl App {
                 }
             }
             Event::Call(call) => return crate::mcp::handle(self, call),
+            Event::Frame => return self.mcp.as_mut().map_or(Task::none(), crate::mcp::frame),
         }
         Task::none()
     }
@@ -2104,7 +2105,7 @@ impl App {
         subs.push(crate::hdl::subscription(self));
         #[cfg(feature = "mcp")]
         if let Some(server) = &self.mcp {
-            subs.push(crate::mcp::subscription(&server.name));
+            subs.push(crate::mcp::subscription(server));
         }
         if self.commands.is_some() {
             // Also the keys the focused search field captures: Escape would

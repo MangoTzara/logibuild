@@ -58,7 +58,7 @@ fn main() -> iced::Result {
             let (mut app, task) = app::App::new(file.clone(), run, settings::Settings::user_path());
             #[cfg(feature = "mcp")]
             {
-                app.mcp = mcp.clone().map(|name| mcp::Server { name, connected: false });
+                app.mcp = mcp.clone().map(|name| mcp::Server { name, ..Default::default() });
             }
             (app, task)
         },

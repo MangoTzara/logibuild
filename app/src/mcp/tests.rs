@@ -192,3 +192,17 @@ fn socket_round_trip() {
     // A second instance does not take over the socket.
     assert!(super::bind(&name).is_err());
 }
+
+#[test]
+fn screenshot_waits_for_the_window_to_be_drawn() {
+    let mut app = app();
+    app.mcp = Some(super::Server { name: "unused".into(), ..Default::default() });
+    let (tx, rx) = mpsc::channel();
+    let request = json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": { "name": "screenshot" } });
+    let _ = app.update(Message::Mcp(Event::Call(Call { line: request.to_string(), reply: Reply::new(tx) })));
+    assert!(rx.try_recv().is_err(), "not answered before the window is drawn");
+    let _ = app.update(Message::Mcp(Event::Frame));
+    assert_eq!(app.mcp.as_ref().unwrap().shots.len(), 1);
+    let _ = app.update(Message::Mcp(Event::Frame));
+    assert!(app.mcp.as_ref().unwrap().shots.is_empty(), "taken after two frames");
+}

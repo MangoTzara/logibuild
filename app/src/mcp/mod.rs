@@ -42,6 +42,8 @@ pub enum Event {
     /// A client connected (`true`) or left (`false`).
     Connected(bool),
     Call(Call),
+    /// The window was drawn, while screenshots wait.
+    Frame,
 }
 
 /// One line received from the client, with the way to answer it.
@@ -79,6 +81,9 @@ impl std::fmt::Debug for Reply {
 pub struct Server {
     pub name: String,
     pub connected: bool,
+    /// Screenshots asked for, with the frames to wait before taking them,
+    /// so that the window shows the last edits.
+    pub shots: Vec<(Value, Reply, u8)>,
 }
 
 // ---- socket ---------------------------------------------------------------------------
@@ -139,13 +144,31 @@ fn bind(name: &str) -> io::Result<LocalSocketListener> {
 }
 
 /// The listener as a subscription: answers come back from [`App::update`].
-pub fn subscription(name: &str) -> Subscription<Message> {
-    Subscription::run_with(name.to_string(), |name| {
+pub fn subscription(server: &Server) -> Subscription<Message> {
+    let listener = Subscription::run_with(server.name.clone(), |name| {
         let (tx, rx) = channel::unbounded();
         let name = name.clone();
         std::thread::spawn(move || listen(&name, &tx));
         rx
-    })
+    });
+    if server.shots.is_empty() {
+        listener
+    } else {
+        Subscription::batch([listener, window::frames().map(|_| Message::Mcp(Event::Frame))])
+    }
+}
+
+/// Counts a drawn frame; takes the screenshots that waited long enough.
+pub fn frame(server: &mut Server) -> Task<Message> {
+    let mut tasks = Vec::new();
+    server.shots.retain_mut(|(id, reply, wait)| {
+        *wait = wait.saturating_sub(1);
+        if *wait == 0 {
+            tasks.push(screenshot(id.clone(), reply.clone()));
+        }
+        *wait > 0
+    });
+    Task::batch(tasks)
 }
 
 fn listen(name: &str, tx: &channel::UnboundedSender<Message>) {
@@ -290,7 +313,12 @@ pub fn handle(app: &mut App, call: Call) -> Task<Message> {
             let name = params.get("name").and_then(Value::as_str).unwrap_or_default();
             let args = params.get("arguments").cloned().unwrap_or(json!({}));
             if name == "screenshot" {
-                return screenshot(id, call.reply);
+                match &mut app.mcp {
+                    // Taken once the window shows the last edits.
+                    Some(server) => server.shots.push((id, call.reply, 2)),
+                    None => call.reply.send(Some(result(id, tool_result(Err("Not listening.".into()))))),
+                }
+                return Task::none();
             }
             match tools::call(app, name, &args) {
                 Some(r) => result(id, tool_result(r)),
