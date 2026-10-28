@@ -55,6 +55,9 @@ pub struct Tab {
     /// The file changed on disk while edited here.
     pub changed_on_disk: bool,
     undo: undo::Undo,
+    /// The spaces inserted by the last Tabs in a row, as `(line, from,
+    /// to)` columns: Backspace takes each run back at once.
+    tab_runs: Vec<(usize, usize, usize)>,
 }
 
 #[derive(Debug)]
@@ -282,21 +285,50 @@ pub fn update(app: &mut App, m: Msg) -> Task<Message> {
         }
         Msg::Edit(action) => {
             if let Some(tab) = app.hdl.tabs.get_mut(app.hdl.active) {
+                use text_editor::{Action, Edit};
+                // Tab without a selection: spaces to the next tab stop (the
+                // editor's own counts only the blanks before the cursor).
+                let tab_key = matches!(action, Action::Edit(Edit::Indent)) && tab.content.cursor().selection.is_none();
+                let action = if tab_key {
+                    Action::Edit(Edit::Paste(Arc::new(" ".repeat(to_tab_stop(&tab.content)))))
+                } else {
+                    action
+                };
                 tab.undo.record(&tab.content, &action);
                 if action.is_edit() {
                     tab.dirty = true;
                 }
+                let before = tab.content.cursor();
                 let times = match action {
-                    text_editor::Action::Edit(text_editor::Edit::Backspace) => backspaces(&tab.content),
-                    _ => 1,
+                    Action::Edit(Edit::Backspace) => match tab_run(tab) {
+                        Some(n) => {
+                            tab.tab_runs.pop();
+                            n
+                        }
+                        None => {
+                            tab.tab_runs.clear();
+                            backspaces(&tab.content)
+                        }
+                    },
+                    _ if tab_key => 1,
+                    Action::Scroll { .. } => 1,
+                    _ => {
+                        tab.tab_runs.clear();
+                        1
+                    }
                 };
                 for _ in 0..times {
                     tab.content.perform(action.clone());
+                }
+                if tab_key {
+                    let (from, to) = (before.position, tab.content.cursor().position);
+                    tab.tab_runs.push((from.line, from.column, to.column));
                 }
             }
         }
         m @ (Msg::Undo | Msg::Redo) => {
             if let Some(tab) = app.hdl.tabs.get_mut(app.hdl.active) {
+                tab.tab_runs.clear();
                 let done = match m {
                     Msg::Undo => tab.undo.undo(&mut tab.content),
                     _ => tab.undo.redo(&mut tab.content),
@@ -307,6 +339,7 @@ pub fn update(app: &mut App, m: Msg) -> Task<Message> {
         Msg::DeleteWord(forward) => {
             if let Some(tab) = app.hdl.tabs.get_mut(app.hdl.active) {
                 use text_editor::{Action, Edit, Motion};
+                tab.tab_runs.clear();
                 tab.undo.checkpoint(&tab.content);
                 if tab.content.selection().is_none() {
                     tab.content.perform(Action::Select(if forward { Motion::WordRight } else { Motion::WordLeft }));
@@ -610,6 +643,7 @@ fn open(app: &mut App, path: &Path) {
                 stamp: stamp(path),
                 changed_on_disk: false,
                 undo: undo::Undo::default(),
+                tab_runs: Vec::new(),
             });
             app.hdl.active = app.hdl.tabs.len() - 1;
         }
@@ -620,6 +654,25 @@ fn open(app: &mut App, path: &Path) {
 /// Width of an indentation step in the source editor (the editor's tab
 /// width, see vendor/README.md).
 const TAB: usize = 4;
+
+/// Spaces from the cursor to the next tab stop.
+fn to_tab_stop(content: &text_editor::Content) -> usize {
+    let cursor = content.cursor().position;
+    let column = content.line(cursor.line).and_then(|l| Some(l.text.get(..cursor.column)?.chars().count()));
+    TAB - column.unwrap_or(0) % TAB
+}
+
+/// The length of the spaces of the last Tab, when the cursor is right after
+/// them and they are still there.
+fn tab_run(tab: &Tab) -> Option<usize> {
+    let &(line, from, to) = tab.tab_runs.last()?;
+    let cursor = tab.content.cursor();
+    if cursor.selection.is_some() || (cursor.position.line, cursor.position.column) != (line, to) {
+        return None;
+    }
+    let text = tab.content.line(line)?.text;
+    text.get(from..to)?.bytes().all(|b| b == b' ').then_some(to - from)
+}
 
 /// Characters a Backspace deletes: back to the previous tab stop when only
 /// spaces are in between, as if they were a tab; otherwise one.
@@ -646,6 +699,7 @@ fn reload(tab: &mut Tab) {
         tab.content.move_to(text_editor::Cursor { selection: None, ..cursor });
         tab.dirty = false;
     }
+    tab.tab_runs.clear();
     tab.stamp = stamp(&tab.path);
     tab.changed_on_disk = false;
 }
@@ -1097,6 +1151,47 @@ mod tests {
         assert_eq!(text(&app), "entity counter is end;\n");
         let _ = update(&mut app, Msg::Redo);
         assert_eq!(text(&app), "entity  is end;\n");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn backspace_takes_back_the_spaces_of_a_tab() {
+        use text_editor::{Action, Cursor, Edit, Position};
+        let dir = std::env::temp_dir().join(format!("lb_app_hdl_tab_runs_{}", std::process::id()));
+        let (mut app, _) = app_with_source(&dir);
+        let text = |app: &App| app.hdl.tabs[0].content.text();
+        let at = |app: &mut App, column| {
+            let position = Position { line: 0, column };
+            app.hdl.tabs[0].content.move_to(Cursor { position, selection: None });
+        };
+        let key = |app: &mut App, edit| _ = update(app, Msg::Edit(Action::Edit(edit)));
+        // "e|ntity": Tab adds 3 spaces, Backspace takes them back.
+        at(&mut app, 1);
+        key(&mut app, Edit::Indent);
+        assert_eq!(text(&app), "e   ntity counter is end;\n");
+        key(&mut app, Edit::Backspace);
+        assert_eq!(text(&app), "entity counter is end;\n");
+        // Two Tabs, two Backspaces.
+        key(&mut app, Edit::Indent);
+        key(&mut app, Edit::Indent);
+        assert_eq!(text(&app), "e       ntity counter is end;\n");
+        key(&mut app, Edit::Backspace);
+        assert_eq!(text(&app), "e   ntity counter is end;\n");
+        key(&mut app, Edit::Backspace);
+        assert_eq!(text(&app), "entity counter is end;\n");
+        // Typed spaces go one at a time.
+        at(&mut app, 2);
+        key(&mut app, Edit::Insert(' '));
+        key(&mut app, Edit::Insert(' '));
+        key(&mut app, Edit::Backspace);
+        assert_eq!(text(&app), "en tity counter is end;\n");
+        // After typing, the spaces of a Tab are ordinary spaces.
+        at(&mut app, 1);
+        key(&mut app, Edit::Indent);
+        key(&mut app, Edit::Insert('x'));
+        key(&mut app, Edit::Backspace);
+        key(&mut app, Edit::Backspace);
+        assert_eq!(text(&app), "e  n tity counter is end;\n");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
