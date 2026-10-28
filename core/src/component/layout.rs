@@ -473,7 +473,9 @@ pub fn layout(kind: Kind, props: &Props, sub: Option<&Circuit>) -> Layout {
             };
             let (ins, outs) = terminals(sub);
             let n = ins.len().max(outs.len()).max(1) as i32;
-            let mut l = Layout::new(bw, 2 * n);
+            // Synthesized from HDL: room for the "HDL" mark under the name.
+            let h = if sub.hdl.is_some() { (2 * n).max(3) } else { 2 * n };
+            let mut l = Layout::new(bw, h);
             for (i, (name, width, _)) in ins.into_iter().enumerate() {
                 l.input(name, 0, 1 + 2 * i as i32, width);
             }
@@ -496,6 +498,21 @@ pub fn layout(kind: Kind, props: &Props, sub: Option<&Circuit>) -> Layout {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hdl_subcircuits_have_room_for_their_mark() {
+        let mut sub = Circuit::new("dec");
+        for (id, kind, y) in [(1, Kind::Input, 0), (2, Kind::Output, 0)] {
+            let props = kind.default_props();
+            sub.components.push(crate::circuit::Component { id, kind, pos: (0, y), rot: 0, mirror: false, props });
+        }
+        let props = Props { circuit: "dec".into(), ..Kind::Subcircuit.default_props() };
+        assert_eq!(layout(Kind::Subcircuit, &props, Some(&sub)).h, 2);
+        sub.hdl = Some(Default::default());
+        let l = layout(Kind::Subcircuit, &props, Some(&sub));
+        assert_eq!(l.h, 3);
+        assert_eq!(l.pins.iter().map(|p| p.pos.1).collect::<Vec<_>>(), [1, 1], "pins stay put");
+    }
 
     #[test]
     fn stacking() {

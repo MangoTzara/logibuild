@@ -825,3 +825,22 @@ fn place_refused(app: &mut App) {
     assert!(app.status.contains("read-only"), "{}", app.status);
     escape(app);
 }
+
+#[test]
+fn frozen_route_can_go_back_to_automatic() {
+    let mut app = app();
+    let i = place(&mut app, Kind::Input, (0, 0));
+    let n = place(&mut app, Kind::Not, (6, 4));
+    connect(&mut app, (i, "out"), (n, "in"));
+    let wire = app.circuit().wires[0].clone();
+    ev(&mut app, EditorEvent::SelectWire { wire: wire.clone(), additive: false });
+    // What the Freeze route button sends.
+    let pts = app.wire_route(&wire).unwrap().to_vec();
+    assert!(pts.len() > 2, "{pts:?}");
+    let frozen = crate::routing::tidy_path(pts[0], &pts[1..pts.len() - 1], pts[pts.len() - 1]);
+    let _ = app.update(Message::SetWirePath(wire, frozen));
+    let sel = app.selection.wires[0].clone();
+    assert!(app.circuit().wires.contains(&sel), "selection follows the frozen wire");
+    let _ = app.update(Message::SetWirePath(sel, Vec::new()));
+    assert!(app.circuit().wires[0].path.is_empty(), "{:?}", app.circuit().wires);
+}

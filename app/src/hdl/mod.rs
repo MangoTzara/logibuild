@@ -10,6 +10,7 @@
 //! `hdl` Cargo feature and shown when enabled in the settings.
 
 mod highlight;
+mod undo;
 pub mod view;
 
 use std::collections::HashSet;
@@ -53,6 +54,7 @@ pub struct Tab {
     stamp: Option<Stamp>,
     /// The file changed on disk while edited here.
     pub changed_on_disk: bool,
+    undo: undo::Undo,
 }
 
 #[derive(Debug)]
@@ -140,6 +142,12 @@ pub enum Msg {
     SelectTab(usize),
     CloseTab(usize),
     Edit(text_editor::Action),
+    Undo,
+    Redo,
+    /// Delete the word after the cursor (`true`) or before it, or the selection.
+    DeleteWord(bool),
+    /// Scroll the editor so that this line (with a fraction) is at the top.
+    ScrollTo(f32),
     Save,
     Reload,
     KeepMine,
@@ -274,10 +282,39 @@ pub fn update(app: &mut App, m: Msg) -> Task<Message> {
         }
         Msg::Edit(action) => {
             if let Some(tab) = app.hdl.tabs.get_mut(app.hdl.active) {
+                tab.undo.record(&tab.content, &action);
                 if action.is_edit() {
                     tab.dirty = true;
                 }
                 tab.content.perform(action);
+            }
+        }
+        m @ (Msg::Undo | Msg::Redo) => {
+            if let Some(tab) = app.hdl.tabs.get_mut(app.hdl.active) {
+                let done = match m {
+                    Msg::Undo => tab.undo.undo(&mut tab.content),
+                    _ => tab.undo.redo(&mut tab.content),
+                };
+                tab.dirty |= done;
+            }
+        }
+        Msg::DeleteWord(forward) => {
+            if let Some(tab) = app.hdl.tabs.get_mut(app.hdl.active) {
+                use text_editor::{Action, Edit, Motion};
+                tab.undo.checkpoint(&tab.content);
+                if tab.content.selection().is_none() {
+                    tab.content.perform(Action::Select(if forward { Motion::WordRight } else { Motion::WordLeft }));
+                }
+                tab.content.perform(Action::Edit(Edit::Delete));
+                tab.dirty = true;
+            }
+        }
+        Msg::ScrollTo(line) => {
+            if let Some(tab) = app.hdl.tabs.get_mut(app.hdl.active) {
+                let lines = (line - tab.content.scroll().0).round() as i32;
+                if lines != 0 {
+                    tab.content.perform(text_editor::Action::Scroll { lines });
+                }
             }
         }
         Msg::Save => {
@@ -566,6 +603,7 @@ fn open(app: &mut App, path: &Path) {
                 dirty: false,
                 stamp: stamp(path),
                 changed_on_disk: false,
+                undo: undo::Undo::default(),
             });
             app.hdl.active = app.hdl.tabs.len() - 1;
         }
@@ -576,6 +614,7 @@ fn open(app: &mut App, path: &Path) {
 fn reload(tab: &mut Tab) {
     if let Ok(text) = std::fs::read_to_string(&tab.path) {
         let cursor = tab.content.cursor();
+        tab.undo = undo::Undo::default();
         tab.content = text_editor::Content::with_text(&text);
         tab.content.move_to(text_editor::Cursor { selection: None, ..cursor });
         tab.dirty = false;
@@ -988,6 +1027,33 @@ mod tests {
         assert_eq!(app.hdl.tabs.len(), 1);
         let _ = update(&mut app, Msg::CloseTab(0));
         assert!(app.hdl.tabs.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn editor_keys_indent_delete_words_and_undo() {
+        use text_editor::{Action, Cursor, Edit, Position};
+        let dir = std::env::temp_dir().join(format!("lb_app_hdl_keys_{}", std::process::id()));
+        let (mut app, _) = app_with_source(&dir);
+        let text = |app: &App| app.hdl.tabs[0].content.text();
+        let at = |app: &mut App, column| {
+            let position = Position { line: 0, column };
+            app.hdl.tabs[0].content.move_to(Cursor { position, selection: None });
+        };
+        // "entity counter is end;": Ctrl+Backspace after "counter".
+        at(&mut app, 14);
+        let _ = update(&mut app, Msg::DeleteWord(false));
+        assert_eq!(text(&app), "entity  is end;\n");
+        assert!(app.hdl.has_unsaved());
+        // Tab: four spaces at the start of the line.
+        at(&mut app, 0);
+        let _ = update(&mut app, Msg::Edit(Action::Edit(Edit::Indent)));
+        assert_eq!(text(&app), "    entity  is end;\n");
+        let _ = update(&mut app, Msg::Undo);
+        let _ = update(&mut app, Msg::Undo);
+        assert_eq!(text(&app), "entity counter is end;\n");
+        let _ = update(&mut app, Msg::Redo);
+        assert_eq!(text(&app), "entity  is end;\n");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

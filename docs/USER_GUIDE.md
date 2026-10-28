@@ -211,8 +211,8 @@ only hides them: circuits synthesized from HDL stay in the project and still sim
 ### Sources
 
 The left column of the HDL view lists the source files of the project with the entities
-or modules each declares. **Open files…** (in the toolbar) adds existing files, **New VHDL file…** and **New
-Verilog file…** create one from a template; **Remove**, above the editor, removes
+or modules each declares. **Open files** (in the toolbar) adds existing files, **New VHDL** and **New
+Verilog** create one from a template; **Remove**, above the editor, removes
 the file shown (the file itself is kept). Sources are stored relative to the project file. The order of the files
 does not matter: GHDL works out the order of analysis. The VHDL revision (VHDL-93 or
 VHDL-2008) is chosen in the toolbar; the Synopsys packages (`std_logic_unsigned`…) are
@@ -258,9 +258,10 @@ component and become gates; memories with several ports become registers and mul
 ### Synthesized circuits
 
 A synthesized circuit is marked **HDL** in Project circuits and on its instances. It is
-**read-only**: change it by editing its sources. When the sources change, it is marked
-**outdated** in orange until it is synthesized again; if the synthesis fails, the last
-working version stays in place, still outdated. A synthesis replaces the circuits in one
+**read-only**: change it by editing its sources. When the sources change, it is out of
+date until it is synthesized again: its **HDL** mark turns orange, and the HDL view says
+**old** instead of **built**. If the synthesis fails, the last working version stays in
+place, still out of date. A synthesis replaces the circuits in one
 step, which **Undo** reverts.
 
 **Convert to circuit** (in the banner over the circuit or in the circuit panel) makes it an

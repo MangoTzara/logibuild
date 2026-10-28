@@ -210,7 +210,7 @@ pub fn theme() -> Theme {
     if is_dark() { DARK_THEME.clone() } else { LIGHT_THEME.clone() }
 }
 
-const fn alpha(c: Color, a: f32) -> Color {
+pub const fn alpha(c: Color, a: f32) -> Color {
     Color { a, ..c }
 }
 

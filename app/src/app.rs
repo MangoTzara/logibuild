@@ -2136,36 +2136,45 @@ impl App {
     }
 
     /// Above a circuit synthesized from HDL: it is read-only, and whether it
-    /// is out of date.
+    /// is out of date, with the source it comes from.
     fn hdl_banner(&self) -> Option<Element<'_, Message>> {
         let c = self.circuit();
         let h = c.hdl.as_ref()?;
         let name = c.name.clone();
-        let convert = button(text("Convert to circuit").size(theme::fs(13.0)))
-            .on_press(Message::ConvertCircuit(name.clone()))
-            .style(theme::push)
-            .padding([3, 12]);
-        let (emblem, msg) = if h.stale {
-            (
-                Emblem::Warning,
-                format!(
-                    "Out of date: the HDL sources changed since “{name}” was synthesized, or the last synthesis failed."
-                ),
-            )
-        } else {
-            (Emblem::Info, format!("“{name}” is synthesized from HDL and read-only: edit its sources to change it."))
+        let push = |label: &str, msg: Message, default: bool| {
+            button(text(label.to_string()).size(theme::fs(13.0)))
+                .on_press(msg)
+                .style(if default { theme::default_push } else { theme::push })
+                .padding([3, 12])
         };
-        let mut line = row![text(msg).size(theme::fs(13.0)).width(Fill)].spacing(6).align_y(Alignment::Center);
+        // The file and line declaring the entity, when the HDL view is on.
+        #[cfg(feature = "hdl")]
+        let source = self.settings.hdl.then(|| {
+            self.hdl.files.iter().find_map(|f| {
+                f.units.iter().find(|u| u.name.eq_ignore_ascii_case(&name)).map(|u| (f.path.clone(), u.line))
+            })
+        });
+        #[cfg(feature = "hdl")]
+        let source = source.flatten();
+        let (emblem, title, detail) = if h.stale {
+            (Emblem::Warning, "Out of date", "The sources changed since the last synthesis.")
+        } else {
+            (Emblem::Info, "", "Read only: this circuit is generated from HDL source code.")
+        };
+        let mut line = row![].spacing(8).align_y(Alignment::Center);
+        if !title.is_empty() {
+            line = line.push(text(title).size(theme::fs(13.0)).font(theme::FONT_MEDIUM));
+        }
+        line = line.push(text(detail).size(theme::fs(13.0)).width(Fill));
         #[cfg(feature = "hdl")]
         if h.stale && self.settings.hdl && self.hdl.running().is_none() {
-            line = line.push(
-                button(text("Synthesize").size(theme::fs(13.0)))
-                    .on_press(Message::Hdl(crate::hdl::Msg::Synthesize))
-                    .style(theme::default_push)
-                    .padding([3, 12]),
-            );
+            line = line.push(push("Synthesize", Message::Hdl(crate::hdl::Msg::Synthesize), true));
         }
-        line = line.push(convert);
+        #[cfg(feature = "hdl")]
+        if let Some((path, at)) = source {
+            line = line.push(push("Edit source", Message::Hdl(crate::hdl::Msg::OpenAt(path, at, 1)), !h.stale));
+        }
+        line = line.push(push("Convert to circuit", Message::ConvertCircuit(name), false));
         Some(theme::message(emblem, line).padding(Padding { top: 4.0, right: 4.0, bottom: 4.0, left: 10.0 }).into())
     }
 
@@ -2529,21 +2538,11 @@ impl App {
         };
         // The HDL view has no circuit to edit or simulate.
         if self.hdl_shown() {
-            return container(
-                row![
-                    tb(Icon::New, "New (Ctrl+N)", Message::New, true),
-                    tb(Icon::Open, "Open (Ctrl+O)", Message::Open, true),
-                    tb(Icon::Save, "Save (Ctrl+S)", Message::Save, true),
-                ]
-                .extend(self.hdl_toolbar())
-                .spacing(3)
-                .height(theme::fs(32.0))
-                .align_y(Alignment::Center),
-            )
-            .padding([2, 6])
-            .width(Fill)
-            .style(theme::header)
-            .into();
+            return container(row(self.hdl_toolbar()).spacing(3).height(theme::fs(32.0)).align_y(Alignment::Center))
+                .padding([2, 6])
+                .width(Fill)
+                .style(theme::header)
+                .into();
         }
         let has_sim = self.sim().is_some();
         let transform = !self.selection.comps.is_empty() || matches!(self.tool, Tool::Place { .. });

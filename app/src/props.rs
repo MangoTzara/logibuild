@@ -254,6 +254,11 @@ fn title<'a>(t: impl ToString) -> Element<'a, Message> {
     text(t.to_string()).size(theme::fs(16.0)).font(theme::FONT_MEDIUM).into()
 }
 
+/// `n` and the noun, plural unless `n` is 1.
+fn count(n: usize, noun: &str) -> String {
+    if n == 1 { format!("1 {noun}") } else { format!("{n} {noun}s") }
+}
+
 /// Explanatory text.
 fn note<'a>(t: impl ToString) -> Element<'a, Message> {
     text(t.to_string()).size(theme::fs(12.0)).color(theme::colors().muted).into()
@@ -469,9 +474,6 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
             "Current value",
             input(app, format!("{}.live", c.id), shown, |s| Message::Prop(Edit::LiveValue(s))),
         ));
-        if p.width() == 1 {
-            col = col.push(note("Tip: click the input on the canvas to toggle it."));
-        }
     }
 
     if c.kind == Kind::Keyboard {
@@ -497,12 +499,13 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
         for t in app.circuit().components.iter().filter(|t| t.kind == Kind::Tunnel && t.id != c.id) {
             *used.entry(t.props.label.trim()).or_insert(0) += 1;
         }
-        col = col.push(note(match used.get(label) {
-            _ if label.is_empty() => "Tunnels with the same label are connected.".to_string(),
-            Some(1) => format!("Connected to 1 other tunnel “{label}”."),
-            Some(n) => format!("Connected to {n} other tunnels “{label}”."),
-            None => format!("No other tunnel is labelled “{label}”."),
-        }));
+        if !label.is_empty() {
+            col = col.push(note(match used.get(label) {
+                Some(1) => "Connected to 1 other tunnel.".to_string(),
+                Some(n) => format!("Connected to {n} other tunnels."),
+                None => "Not connected to other tunnels.".to_string(),
+            }));
+        }
         let others: Vec<&str> = used.into_keys().filter(|l| !l.is_empty() && *l != label).collect();
         if !others.is_empty() {
             let chips = others.into_iter().map(|l| {
@@ -521,7 +524,6 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
         col = col.push(
             row![small("Import .hex…", Message::ImportHex), small("Export .hex…", Message::ExportHex)].spacing(6),
         );
-        col = col.push(note("Contents can stay inline in the .lbc file or live in a separate .hex file."));
     }
     let mut actions = row![small("Rotate", Message::Rotate), small("Flip", Message::Mirror)].spacing(6);
     if !c.kind.is_annotation() {
@@ -531,7 +533,6 @@ fn component_view<'a>(app: &'a App, c: &'a Component) -> Element<'a, Message> {
     col = col.push(Space::new().height(4)).push(actions.push(delete_button("Delete")).wrap().vertical_spacing(6));
     if c.kind == Kind::Subcircuit {
         col = col.push(small("Open circuit", Message::OpenCircuit(p.circuit.clone())));
-        col = col.push(note("Double-click the instance to look inside it with live simulation values."));
     }
     col.into()
 }
@@ -540,7 +541,8 @@ fn multi_view(app: &App) -> Element<'_, Message> {
     let n = app.selection.comps.len();
     let w = app.selection.wires.len();
     let small = push;
-    let mut col = column![title("Selection"), note(format!("{n} components, {w} wires"))].spacing(8);
+    let mut col =
+        column![title("Selection"), note(format!("{}, {}", count(n, "component"), count(w, "wire")))].spacing(8);
     if n > 1 {
         col = col.push(section("Align"));
         col = col.push(
@@ -569,11 +571,7 @@ fn multi_view(app: &App) -> Element<'_, Message> {
         col = col.push(small("Add to waveform", Message::TraceWire(wire.clone())));
         col = col.push(section("Routing"));
         let auto = wire.path.is_empty();
-        col = col.push(note(if auto {
-            "Routed automatically. Alt+click the wire to add a bend point, or freeze the current route."
-        } else {
-            "Manual waypoints: drag the square handles, double-click one to remove it, Alt+click the wire to add one."
-        }));
+        col = col.push(note(if auto { "Automatic" } else { "Manual" }));
         let frozen: Vec<(i32, i32)> = app
             .wire_route(&wire)
             .filter(|pts| pts.len() > 2)
@@ -607,32 +605,20 @@ fn circuit_view(app: &App) -> Element<'_, Message> {
     let c = app.circuit();
     let is_main = app.project.circuit_index(&c.name) == Some(0);
     let mut col = column![
-        title("Circuit"),
+        row![title("Circuit"), note(if is_main { "Main" } else { "" })].spacing(8).align_y(Alignment::Center),
+        note(format!("{}, {}", count(c.components.len(), "component"), count(c.wires.len(), "wire"))),
         field("Name", input(app, "circuit.name".into(), c.name.clone(), Message::RenameCircuit)),
-        note(format!(
-            "{} components, {} wires{}",
-            c.components.len(),
-            c.wires.len(),
-            if is_main { " · Main circuit" } else { "" }
-        )),
     ]
     .spacing(8);
     let (ins, outs) = lb_core::component::layout::terminals(c);
     if !ins.is_empty() || !outs.is_empty() {
         col = col.push(section("Pins"));
         col = col.push(pin_table(app, &ins, &outs));
-        col =
-            col.push(note("Inputs and outputs become the terminals of this circuit when it is used as a subcircuit."));
     }
     if let Some(h) = &c.hdl {
         col = col.push(section("HDL"));
-        col = col.push(note(if h.stale {
-            "Synthesized from the HDL sources, which changed since: out of date."
-        } else {
-            "Synthesized from the HDL sources: read-only."
-        }));
+        col = col.push(note(if h.stale { "Read-only, out of date" } else { "Read-only" }));
         col = col.push(row![push("Convert to circuit", Message::ConvertCircuit(c.name.clone()))]);
-        col = col.push(note("Converting makes it an ordinary circuit you can edit; the sources no longer update it."));
     }
     if !is_main {
         col = col.push(
@@ -686,7 +672,6 @@ fn circuit_view(app: &App) -> Element<'_, Message> {
         "Trace samples",
         input(app, "cfg.trace".into(), app.trace_capacity.to_string(), Message::SetTraceCapacity),
     ));
-    col = col.push(note("Each component’s delay can be changed in its properties."));
     col.into()
 }
 

@@ -4,9 +4,14 @@
 //! the tools.
 
 use iced::keyboard::Key;
-use iced::widget::text_editor::{Binding, KeyPress};
-use iced::widget::{Space, button, column, container, pick_list, row, stack, text, text_editor, text_input};
-use iced::{Alignment, Element, Fill, Font, Padding};
+use iced::keyboard::key::Named;
+use iced::mouse;
+use iced::widget::canvas::{self, Frame, Geometry};
+use iced::widget::text_editor::{Binding, Edit, KeyPress, Status};
+use iced::widget::{
+    Space, button, canvas as canvas_widget, column, container, pick_list, row, stack, text, text_editor, text_input,
+};
+use iced::{Alignment, Element, Fill, Font, Padding, Point, Rectangle, Renderer, Size, Theme};
 
 use lb_core::circuit::VhdlStd;
 use lb_hdl::lang::Lang;
@@ -15,6 +20,7 @@ use lb_hdl::toolchain::Action;
 
 use super::{Msg, highlight};
 use crate::app::{App, Message, Split, splitter};
+use crate::elide::elide;
 use crate::icons::{self, Emblem, Icon};
 use crate::theme;
 
@@ -71,10 +77,9 @@ pub fn toolbar(app: &App) -> Vec<Element<'_, Message>> {
         button(theme::icon_label(i, label, true)).on_press(msg(m)).padding([5, 8]).style(theme::tool).into()
     };
     vec![
-        theme::tool_separator(),
-        tbl(Icon::Open, "Open files…", Msg::AddFiles),
-        tbl(Icon::New, "New VHDL file…", Msg::NewFile(Lang::Vhdl)),
-        tbl(Icon::New, "New Verilog file…", Msg::NewFile(Lang::Verilog)),
+        tbl(Icon::Open, "Open files", Msg::AddFiles),
+        tbl(Icon::New, "New VHDL", Msg::NewFile(Lang::Vhdl)),
+        tbl(Icon::New, "New Verilog", Msg::NewFile(Lang::Verilog)),
         theme::tool_separator(),
         pick_list(&VhdlStd::ALL[..], Some(app.project.hdl.vhdl_std), |s| msg(Msg::SetStd(s)))
             .text_size(theme::fs(13.0))
@@ -174,6 +179,29 @@ fn muted<'a>(s: impl ToString, size: f32) -> text::Text<'a> {
     text(s.to_string()).size(theme::fs(size)).color(theme::colors().muted)
 }
 
+/// The header of a side panel: its title, a muted summary and a text action
+/// on the right.
+fn panel_header<'a>(title: &str, summary: String, action: &str, m: Msg) -> Element<'a, Message> {
+    let c = theme::colors();
+    let header = row![
+        text(title.to_string()).size(theme::fs(12.0)).font(theme::FONT_MEDIUM),
+        muted(summary, 11.0),
+        Space::new().width(Fill),
+        button(text(action.to_string()).size(theme::fs(12.0)))
+            .on_press(msg(m))
+            .padding([2, 4])
+            .style(theme::bare(c.muted, c.text)),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
+    container(header).padding([4, 8]).into()
+}
+
+/// The hint of an empty side panel.
+fn placeholder<'a>(s: &str) -> Element<'a, Message> {
+    container(muted(s, 12.0)).width(Fill).padding([8, 10]).into()
+}
+
 fn sources(app: &App) -> Element<'_, Message> {
     let c = theme::colors();
     let link = |label: &str, m: Msg| {
@@ -185,15 +213,13 @@ fn sources(app: &App) -> Element<'_, Message> {
     let active = app.hdl.active_tab().map(|t| t.path.clone());
     let mut list = column![];
     if app.hdl.files.is_empty() {
-        list = list
-            .push(container(muted("No sources yet: add VHDL or Verilog files, or create one.", 12.0)).padding([6, 10]));
+        list = list.push(placeholder("No sources yet."));
     }
     for f in &app.hdl.files {
         let name = f.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| f.entry.clone());
         let lang = if f.missing { "missing" } else { f.lang.map_or("?", Lang::name) };
         let file = row![
-            text(name).size(theme::fs(13.0)).color(if f.missing { c.negative } else { c.text }),
-            Space::new().width(Fill),
+            container(elide(name).size(theme::fs(13.0)).color(if f.missing { c.negative } else { c.text })).width(Fill),
             text(lang).size(theme::fs(11.0)).color(if f.missing { c.negative } else { c.muted }),
         ]
         .align_y(Alignment::Center);
@@ -212,21 +238,20 @@ fn sources(app: &App) -> Element<'_, Message> {
                 theme::tip(link("View", Msg::View(u.name.clone())), "Show the synthesized circuit")
             };
             let (state, color, action) = match app.project.circuit(&u.name).map(|c| &c.hdl) {
-                Some(Some(h)) if h.stale => ("outdated", c.neutral, view()),
-                Some(Some(_)) => ("synthesized", c.muted, view()),
+                Some(Some(h)) if h.stale => ("old", c.neutral, view()),
+                Some(Some(_)) => ("built", c.muted, view()),
                 Some(None) => ("name taken", c.muted, Space::new().into()),
                 None => ("", c.muted, link("Add", Msg::AddTop(u.name.clone())).into()),
             };
-            let state = text(state).color(color);
             // The actions are inside the row, so that the whole row lights up.
-            let entity = row![
-                text(u.name.clone()).size(theme::fs(12.5)).font(Font::MONOSPACE),
-                Space::new().width(Fill),
-                state.size(theme::fs(11.0)),
-                container(action).width(theme::fs(52.0)).align_right(theme::fs(52.0)),
-            ]
-            .spacing(6)
-            .align_y(Alignment::Center);
+            let mut entity =
+                row![container(elide(u.name.clone()).size(theme::fs(12.5)).font(Font::MONOSPACE)).width(Fill)]
+                    .spacing(6)
+                    .align_y(Alignment::Center);
+            if !state.is_empty() {
+                entity = entity.push(text(state).color(color).size(theme::fs(11.0)));
+            }
+            let entity = entity.push(action);
             units = units.push(
                 button(entity)
                     .on_press(msg(Msg::OpenAt(f.path.clone(), u.line, 1)))
@@ -247,16 +272,23 @@ fn sources(app: &App) -> Element<'_, Message> {
             list = list.push(stack![units, guide].width(Fill));
         }
     }
-    theme::scroll(container(list).padding(Padding { top: 4.0, ..Padding::ZERO })).height(Fill).into()
+    let count = match app.hdl.files.len() {
+        0 => String::new(),
+        n => n.to_string(),
+    };
+    column![
+        panel_header("Sources", count, "Add", Msg::AddFiles),
+        theme::hline(),
+        theme::scroll(container(list).padding(Padding { top: 4.0, ..Padding::ZERO })).height(Fill),
+    ]
+    .into()
 }
 
 fn editor(app: &App) -> Element<'_, Message> {
     let c = theme::colors();
     let hdl = &app.hdl;
     let Some(tab) = hdl.active_tab() else {
-        return container(muted("Open a source from the list, or add one with “Open files…”.", 13.0))
-            .center(Fill)
-            .into();
+        return empty_editor(app);
     };
     let action = |label: &str, m: Msg| {
         button(text(label.to_string()).size(theme::fs(12.0)))
@@ -328,16 +360,181 @@ fn editor(app: &App) -> Element<'_, Message> {
         .font(Font::MONOSPACE)
         .size(theme::fs(13.0))
         .height(Fill)
-        .padding(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 12.0 })
+        .padding(Padding { top: 8.0, right: 4.0, bottom: 8.0, left: 12.0 })
         .style(theme::code_area)
-        .key_binding(|kp: KeyPress| {
-            if kp.modifiers.command() && matches!(kp.key.as_ref(), Key::Character("s")) {
-                return Some(Binding::Custom(msg(Msg::Save)));
-            }
-            Binding::from_key_press(kp)
-        })
+        .key_binding(key_binding)
         .highlight_with::<highlight::Hdl>(tab.lang, highlight::format);
-    col.push(edit).height(Fill).into()
+    let (top, visible, lines) = tab.content.scroll();
+    let bar = canvas_widget(Scrollbar { top, visible, lines }).width(BAR_W).height(Fill);
+    col.push(container(row![edit, bar]).height(Fill).style(theme::view)).height(Fill).into()
+}
+
+/// The keys of the source editor, besides those of iced.
+fn key_binding(kp: KeyPress) -> Option<Binding<Message>> {
+    let (ctrl, shift) = (kp.modifiers.command(), kp.modifiers.shift());
+    if ctrl && matches!(kp.key.as_ref(), Key::Character("s")) {
+        return Some(Binding::Custom(msg(Msg::Save)));
+    }
+    if matches!(kp.status, Status::Focused { .. }) {
+        let m = match kp.key.as_ref() {
+            Key::Character("z") if ctrl && !shift => Some(Msg::Undo),
+            Key::Character("z") if ctrl => Some(Msg::Redo),
+            Key::Character("y") if ctrl => Some(Msg::Redo),
+            Key::Named(Named::Tab) if !ctrl => {
+                Some(Msg::Edit(text_editor::Action::Edit(if shift { Edit::Unindent } else { Edit::Indent })))
+            }
+            Key::Named(Named::Backspace) if ctrl => Some(Msg::DeleteWord(false)),
+            Key::Named(Named::Delete) if ctrl => Some(Msg::DeleteWord(true)),
+            _ => None,
+        };
+        if let Some(m) = m {
+            return Some(Binding::Custom(msg(m)));
+        }
+    }
+    Binding::from_key_press(kp)
+}
+
+/// Width of the scrollbar of the source editor.
+const BAR_W: f32 = 10.0;
+
+/// The scrollbar of the source editor (the editor of iced has none), in
+/// lines of text: the first one shown, how many fit, how many there are.
+struct Scrollbar {
+    top: f32,
+    visible: f32,
+    lines: usize,
+}
+
+/// While the handle is dragged: where it was taken, from its top.
+#[derive(Default)]
+struct Grab(Option<f32>);
+
+impl Scrollbar {
+    fn shown(&self) -> bool {
+        self.visible > 0.0 && (self.lines as f32) > self.visible
+    }
+
+    /// The highest first line: the last line at the bottom.
+    fn max_top(&self) -> f32 {
+        (self.lines as f32 - self.visible).max(1.0)
+    }
+
+    /// The top and height of the handle in a bar `h` high.
+    fn handle(&self, h: f32) -> (f32, f32) {
+        let len = (h * self.visible / self.lines as f32).clamp(24.0_f32.min(h), h);
+        ((h - len) * (self.top / self.max_top()).clamp(0.0, 1.0), len)
+    }
+
+    /// The first line that puts the handle at `y`, taken `grab` from its top.
+    fn top_at(&self, y: f32, grab: f32, h: f32) -> f32 {
+        let (_, len) = self.handle(h);
+        ((y - grab) / (h - len).max(1.0)).clamp(0.0, 1.0) * self.max_top()
+    }
+}
+
+impl canvas::Program<Message> for Scrollbar {
+    type State = Grab;
+
+    fn update(
+        &self,
+        grab: &mut Grab,
+        event: &iced::Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<canvas::Action<Message>> {
+        if !self.shown() {
+            return None;
+        }
+        let scroll = |line: f32| canvas::Action::publish(msg(Msg::ScrollTo(line))).and_capture();
+        match event {
+            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                let y = cursor.position_in(bounds)?.y;
+                let (top, len) = self.handle(bounds.height);
+                if (top..top + len).contains(&y) {
+                    grab.0 = Some(y - top);
+                    Some(canvas::Action::capture())
+                } else {
+                    // On the rail: the handle jumps there, centred.
+                    grab.0 = Some(len / 2.0);
+                    Some(scroll(self.top_at(y, len / 2.0, bounds.height)))
+                }
+            }
+            iced::Event::Mouse(mouse::Event::CursorMoved { position }) => {
+                let g = grab.0?;
+                Some(scroll(self.top_at(position.y - bounds.y, g, bounds.height)))
+            }
+            iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                grab.0.take().map(|_| canvas::Action::capture())
+            }
+            iced::Event::Mouse(mouse::Event::WheelScrolled { delta }) if cursor.is_over(bounds) => {
+                let lines = match delta {
+                    mouse::ScrollDelta::Lines { y, .. } => -y * 3.0,
+                    mouse::ScrollDelta::Pixels { y, .. } => -y / 18.0,
+                };
+                Some(scroll(self.top + lines))
+            }
+            _ => None,
+        }
+    }
+
+    fn draw(
+        &self,
+        grab: &Grab,
+        renderer: &Renderer,
+        _theme: &Theme,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Vec<Geometry> {
+        if !self.shown() {
+            return Vec::new();
+        }
+        let mut frame = Frame::new(renderer, bounds.size());
+        let (top, len) = self.handle(bounds.height);
+        // As the other scrollbars (theme::scrollbar): thin, accent while used.
+        let active = grab.0.is_some() || cursor.is_over(bounds);
+        let color = if active { theme::colors().accent } else { theme::alpha(theme::colors().text, 0.28) };
+        let w = 6.0;
+        let handle = canvas::Path::rounded_rectangle(
+            Point::new((bounds.width - w) / 2.0, top + 2.0),
+            Size::new(w, (len - 4.0).max(w)),
+            (w / 2.0).into(),
+        );
+        frame.fill(&handle, color);
+        vec![frame.into_geometry()]
+    }
+}
+
+/// The editor with no file open: what to do next.
+fn empty_editor(app: &App) -> Element<'_, Message> {
+    let c = theme::colors();
+    let hint = if app.hdl.files.is_empty() {
+        "Create a VHDL or Verilog file, or add existing ones to the project."
+    } else {
+        "Pick a source from the list, or add another one."
+    };
+    let act = |i: Icon, label: &str, m: Msg| {
+        button(theme::icon_label(i, label, true)).on_press(msg(m)).padding([5, 12]).style(theme::push)
+    };
+    container(
+        column![
+            icons::icon(Icon::Chip, 48.0, c.disabled),
+            Space::new().height(4),
+            text("No file open").size(theme::fs(16.0)).font(theme::FONT_MEDIUM),
+            muted(hint, 13.0),
+            Space::new().height(8),
+            row![
+                act(Icon::Open, "Open files", Msg::AddFiles),
+                act(Icon::New, "New VHDL", Msg::NewFile(Lang::Vhdl)),
+                act(Icon::New, "New Verilog", Msg::NewFile(Lang::Verilog)),
+            ]
+            .spacing(8),
+        ]
+        .spacing(6)
+        .align_x(Alignment::Center),
+    )
+    .center(Fill)
+    .padding(16)
+    .into()
 }
 
 fn log(app: &App) -> Element<'_, Message> {
@@ -347,18 +544,10 @@ fn log(app: &App) -> Element<'_, Message> {
         (0, 0) => String::new(),
         (e, w) => format!("{e} errors, {w} warnings"),
     };
-    let header = row![
-        text("Messages").size(theme::fs(12.0)).font(theme::FONT_MEDIUM),
-        muted(summary, 11.0),
-        Space::new().width(Fill),
-        button(text("Clear").size(theme::fs(12.0)))
-            .on_press(msg(Msg::ClearLog))
-            .padding([2, 4])
-            .style(theme::bare(theme::colors().muted, theme::colors().text)),
-    ]
-    .spacing(8)
-    .align_y(Alignment::Center);
     let mut lines = column![];
+    if app.hdl.log.is_empty() {
+        lines = lines.push(placeholder("The output of Compile and Synthesize appears here."));
+    }
     for (i, d) in app.hdl.log.iter().enumerate() {
         let color = match d.level {
             Level::Error => theme::colors().negative,
@@ -377,7 +566,7 @@ fn log(app: &App) -> Element<'_, Message> {
         lines = lines.push(line);
     }
     column![
-        container(header).padding([4, 8]),
+        panel_header("Messages", summary, "Clear", Msg::ClearLog),
         theme::hline(),
         theme::scroll(container(lines).padding([4, 0])).height(Fill),
     ]
