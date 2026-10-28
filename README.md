@@ -100,7 +100,6 @@ digit, an ALU, a traffic light, an LFSR, a RAM): enable HDL in the settings, the
 * [Component reference](docs/COMPONENTS.md) — every component with its pins and properties
 * [File format](docs/FILE_FORMAT.md) — `.lbc` projects and `.hex` memory images
 * [Architecture](docs/ARCHITECTURE.md) — crates, simulation engine, router, rendering, tests
-* [SPEC.md](SPEC.md) — the original specification (Italian)
 
 API documentation: `cargo doc --no-deps --open`.
 
