@@ -843,7 +843,6 @@ fn place_refused(app: &mut App) {
     let _ = app.update(Message::PickTool(Kind::And));
     ev(app, EditorEvent::Place { pos: (10, 10) });
     assert_eq!(app.circuit().components.len(), n);
-    assert!(app.status.contains("read-only"), "{}", app.status);
     escape(app);
 }
 

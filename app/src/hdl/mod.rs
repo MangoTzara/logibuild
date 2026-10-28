@@ -24,7 +24,7 @@ use iced::{Subscription, Task};
 use lb_core::circuit::{HdlConfig, Project, VhdlStd};
 use lb_core::history::{Command, Op};
 use lb_hdl::lang::{Lang, Unit, units};
-use lb_hdl::log::{Diagnostic, Level};
+use lb_hdl::log::Diagnostic;
 use lb_hdl::toolchain::{self, Action, Cancel, Job, Outcome};
 
 use crate::app::{App, Message};
@@ -159,7 +159,7 @@ pub enum Msg {
     Synthesize,
     Cancel,
     /// A job ended; the epoch it was started in.
-    Done(u64, Action, Arc<Outcome>),
+    Done(u64, Arc<Outcome>),
     /// Open the source a log line points to.
     GoTo(usize),
     ClearLog,
@@ -225,7 +225,7 @@ pub fn update(app: &mut App, m: Msg) -> Task<Message> {
             if !path.exists() {
                 let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
                 if let Err(e) = std::fs::write(&path, lang.template(&identifier(&stem))) {
-                    app.set_status(format!("Cannot create {}: {e}", path.display()));
+                    app.warn(format!("Cannot create {}: {e}", path.display()));
                     return Task::none();
                 }
             }
@@ -274,7 +274,7 @@ pub fn update(app: &mut App, m: Msg) -> Task<Message> {
             if tab.dirty && app.hdl.close_asked != Some(i) {
                 app.hdl.close_asked = Some(i);
                 let name = file_name(&tab.path);
-                app.set_status(format!("{name} has unsaved changes: save it, or close it again to discard them."));
+                app.warn(format!("{name} has unsaved changes: save it, or close it again to discard them."));
                 return Task::none();
             }
             app.hdl.close_asked = None;
@@ -403,20 +403,19 @@ pub fn update(app: &mut App, m: Msg) -> Task<Message> {
             }
             app.hdl.queued = false;
         }
-        Msg::Done(epoch, action, outcome) => {
+        Msg::Done(epoch, outcome) => {
             if epoch != app.hdl.epoch {
                 app.hdl.job = None;
                 return Task::none();
             }
-            return done(app, action, &outcome);
+            return done(app, &outcome);
         }
         Msg::GoTo(i) => {
             let Some(d) = app.hdl.log.get(i) else { return Task::none() };
             if let (Some(file), Some(line)) = (d.file.clone(), d.line) {
                 let col = d.col.unwrap_or(1);
-                match source_for(app, &file) {
-                    Some(path) => return update(app, Msg::OpenAt(path, line, col)),
-                    None => app.set_status(format!("{} is not a source of the project", file.display())),
+                if let Some(path) = source_for(app, &file) {
+                    return update(app, Msg::OpenAt(path, line, col));
                 }
             }
         }
@@ -647,7 +646,7 @@ fn open(app: &mut App, path: &Path) {
             });
             app.hdl.active = app.hdl.tabs.len() - 1;
         }
-        Err(e) => app.set_status(format!("Cannot open {}: {e}", path.display())),
+        Err(e) => app.warn(format!("Cannot open {}: {e}", path.display())),
     }
 }
 
@@ -712,13 +711,11 @@ fn save_tab(app: &mut App, i: usize) -> bool {
             tab.dirty = false;
             tab.changed_on_disk = false;
             tab.stamp = stamp(&tab.path);
-            let name = file_name(&tab.path);
-            app.set_status(format!("Saved {name}"));
             true
         }
         Err(e) => {
             let p = tab.path.display().to_string();
-            app.set_status(format!("Cannot save {p}: {e}"));
+            app.warn(format!("Cannot save {p}: {e}"));
             false
         }
     }
@@ -815,7 +812,6 @@ fn start(app: &mut App, action: Action) -> Task<Message> {
     let epoch = app.hdl.epoch;
     let what = if action == Action::Compile { "Compiling…" } else { "Synthesizing…" };
     app.hdl.log = vec![Diagnostic::info(what)];
-    app.set_status(what);
     Task::perform(
         async move {
             let (tx, rx) = iced::futures::channel::oneshot::channel();
@@ -824,24 +820,17 @@ fn start(app: &mut App, action: Action) -> Task<Message> {
             });
             rx.await.unwrap_or_default()
         },
-        move |o| msg(Msg::Done(epoch, action, Arc::new(o))),
+        move |o| msg(Msg::Done(epoch, Arc::new(o))),
     )
 }
 
-fn done(app: &mut App, action: Action, outcome: &Outcome) -> Task<Message> {
+fn done(app: &mut App, outcome: &Outcome) -> Task<Message> {
     app.hdl.job = None;
     app.hdl.log = outcome.log.clone();
-    let what = if action == Action::Compile { "Compilation" } else { "Synthesis" };
-    if outcome.cancelled {
-        app.set_status(format!("{what} cancelled"));
-    } else if !outcome.ok {
-        let errors = outcome.log.iter().filter(|d| d.level == Level::Error).count();
-        app.set_status(format!("{what} failed with {errors} errors: see the HDL view"));
+    if !outcome.ok && !outcome.cancelled {
         app.hdl.panel = true;
     } else if let Some(imported) = &outcome.imported {
         apply(app, imported.circuits.clone());
-    } else {
-        app.set_status("Compiled without errors");
     }
     if std::mem::take(&mut app.hdl.queued) {
         return start(app, Action::Synthesize);
@@ -891,7 +880,6 @@ fn apply(app: &mut App, circuits: Vec<lb_core::circuit::Circuit>) {
                     "The project already has a circuit named “{}”: rename it to import the entity.",
                     c.name
                 )));
-                app.set_status(format!("Synthesis not applied: “{}” is the name of a drawn circuit", c.name));
                 app.hdl.panel = true;
                 return;
             }
@@ -913,12 +901,6 @@ fn apply(app: &mut App, circuits: Vec<lb_core::circuit::Circuit>) {
     if !cmd.is_empty() {
         app.exec(cmd);
     }
-    let status = match added.as_slice() {
-        [] => "Synthesis finished: circuits up to date".to_string(),
-        [one] => format!("Synthesized “{one}”: place it from Project circuits"),
-        many => format!("Synthesized {}: place them from Project circuits", many.join(", ")),
-    };
-    app.set_status(status);
 }
 
 /// Opens a file or URL with the desktop's default application.
@@ -935,6 +917,8 @@ fn open_external(target: &str) {
 
 #[cfg(test)]
 mod tests {
+    use lb_hdl::log::Level;
+
     use super::*;
 
     #[test]
@@ -985,7 +969,7 @@ mod tests {
         let imported = lb_hdl::import::import(&design, &[], &app.hdl.digest).unwrap();
         let outcome = Outcome { ok: true, imported: Some(imported), ..Outcome::default() };
         let epoch = app.hdl.epoch;
-        let _ = update(app, Msg::Done(epoch, Action::Synthesize, Arc::new(outcome)));
+        let _ = update(app, Msg::Done(epoch, Arc::new(outcome)));
     }
 
     #[test]
@@ -1013,7 +997,7 @@ mod tests {
         assert!(app.project.circuit("counter").unwrap().hdl.as_ref().unwrap().stale);
         assert!(any_stale(&app.project));
         let epoch = app.hdl.epoch;
-        let _ = update(&mut app, Msg::Done(epoch, Action::Synthesize, Arc::new(Outcome::default())));
+        let _ = update(&mut app, Msg::Done(epoch, Arc::new(Outcome::default())));
         assert!(app.project.circuit("counter").is_some_and(|c| c.hdl.as_ref().unwrap().stale));
         assert!(app.hdl.panel, "the log is shown after a failure");
         synthesized(&mut app);
@@ -1229,7 +1213,7 @@ mod tests {
         let _ = app.update(Message::Menu(Some(crate::app::Menu::File)));
         let _ = app.update(Message::Hdl(Msg::Poll));
         let epoch = app.hdl.epoch;
-        let _ = app.update(Message::Hdl(Msg::Done(epoch, Action::Compile, Arc::new(Outcome::default()))));
+        let _ = app.update(Message::Hdl(Msg::Done(epoch, Arc::new(Outcome::default()))));
         assert_eq!(app.menu, Some(crate::app::Menu::File));
         let _ = app.update(Message::Hdl(Msg::ClearLog));
         assert_eq!(app.menu, None, "a click elsewhere closes it");

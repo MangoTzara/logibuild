@@ -20,7 +20,7 @@ The window has five areas:
 | Left | component library with search, and the circuits of the project |
 | Centre | the editor canvas, with the shown circuit (or instance path) in the bar above it, and the waveform panel |
 | Right | properties of the selection, or of the circuit when nothing is selected |
-| Bottom | status line: last message, simulation time and state, frame rate, zoom |
+| Bottom | status line: simulation time and state, frame rate, zoom |
 
 ## Building circuits
 
@@ -120,9 +120,9 @@ immediately, keeping the state of flip-flops, memories and inputs that still exi
   **Buttons** are momentary: they read 1 while the mouse is pressed.
 * **Select a keyboard** and type: while it is the only selected component, the keys go to
   its buffer instead of triggering the shortcuts (Enter sends a line feed, Backspace a
-  backspace; Ctrl shortcuts still work, **Del** deletes the keyboard). The status bar says
-  so; **Esc** stops typing. **Clear buffer** in the properties panel discards the characters
-  waiting. The circuit reads them from `data` and `avail` (see `examples/rot13_terminal.lbc`).
+  backspace; Ctrl shortcuts still work, **Del** deletes the keyboard); **Esc** stops typing.
+  **Clear buffer** in the properties panel discards the characters waiting. The circuit
+  reads them from `data` and `avail` (see `examples/rot13_terminal.lbc`).
 * **Run / Pause** (toolbar, Simulation menu or **Space**) advances time at the chosen
   **Speed** (ticks per second, or *Max*; **Custom…** lets you type any rate up to 100 million
   ticks per second). Clocks only tick while running.

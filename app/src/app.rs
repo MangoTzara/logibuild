@@ -316,7 +316,6 @@ pub struct App {
     tick_debt: f64,
     pending_settle: bool,
     pub error: Option<String>,
-    pub status: String,
     space_down: bool,
     space_panned: bool,
     pub menu: Option<Menu>,
@@ -362,15 +361,14 @@ impl App {
     pub fn new(file: Option<PathBuf>, run: bool, settings_path: Option<PathBuf>) -> (Self, Task<Message>) {
         let mut project = Project::new(Circuit::new("Main"));
         let mut path = None;
-        let mut status = "Ready. Pick a component from the library and click on the canvas to place it.".to_string();
+        let mut load_error = None;
         if let Some(p) = file {
             match io::load(&p) {
                 Ok(proj) => {
                     project = proj;
-                    status = format!("Opened {}", p.display());
                     path = Some(p);
                 }
-                Err(e) => status = format!("Error: {e}"),
+                Err(e) => load_error = Some(e.to_string()),
             }
         }
         let main = project.main().name.clone();
@@ -396,7 +394,6 @@ impl App {
             tick_debt: 0.0,
             pending_settle: true,
             error: None,
-            status,
             space_down: false,
             space_panned: false,
             menu: None,
@@ -433,6 +430,9 @@ impl App {
         app.fit_view();
         app.set_speed(app.speed);
         app.running = run && app.sim().is_some();
+        if let Some(e) = load_error {
+            app.warn(e);
+        }
         (app, iced::system::theme().map(Message::SystemTheme))
     }
 
@@ -443,7 +443,7 @@ impl App {
         if let Some(path) = &self.settings_path
             && let Err(e) = self.settings.save(path)
         {
-            self.status = format!("Could not save the settings to {}: {e}", path.display());
+            self.warn(format!("Could not save the settings to {}: {e}", path.display()));
         }
     }
 
@@ -615,10 +615,6 @@ impl App {
             )
         });
         if edits && self.project.is_hdl(&cmd.circuit) {
-            self.set_status(format!(
-                "“{}” is synthesized from HDL and read-only: edit its sources, or convert it to an ordinary circuit.",
-                cmd.circuit
-            ));
             return;
         }
         self.tidy_wires(&mut cmd);
@@ -719,8 +715,9 @@ impl App {
         view.scale = new;
     }
 
-    pub(crate) fn set_status(&mut self, s: impl Into<String>) {
-        self.status = s.into();
+    /// Tells why an action could not be done, in a dialog.
+    pub(crate) fn warn(&mut self, msg: impl Into<String>) {
+        self.modal = Some(Modal::Message(msg.into()));
     }
 
     /// Redraws the cached layers of the canvas.
@@ -790,7 +787,6 @@ impl App {
         match io::save(&self.project, &path) {
             Ok(()) => {
                 self.history.mark_saved();
-                self.set_status(format!("Saved {}", path.display()));
                 self.path = Some(path);
                 true
             }
@@ -805,7 +801,6 @@ impl App {
         match after {
             After::New => {
                 self.load_project(Project::new(Circuit::new("Main")), None);
-                self.set_status("New project");
                 Task::none()
             }
             After::Open => pick_file_task(),
@@ -859,7 +854,7 @@ impl App {
             .filter(|c| c.kind == Kind::Subcircuit)
             .find_map(|c| self.placement_refusal(&c.props.circuit))
         {
-            self.set_status(format!("Cannot paste: {why}"));
+            self.warn(format!("Cannot paste: {why}"));
             return;
         }
         let (cmd, ids) = clip.paste(self.circuit(), offset);
@@ -908,7 +903,6 @@ impl App {
         let name_hint = self.circuit().component(comp).map(|c| (c.props.label.clone(), c.kind));
         let Some(sim) = self.sim_mut() else { return };
         let Some(net) = sim.netlist().pin_net(&inst, comp, pin) else {
-            self.set_status("The pin is not connected to any net.");
             return;
         };
         let mut name = sim.netlist().nets[net as usize].name.clone();
@@ -923,13 +917,11 @@ impl App {
         let time = sim.time();
         sim.trace.add(name.clone(), net, value, time, Some((inst.into(), comp, pin)));
         self.wave.visible = true;
-        self.set_status(format!("Added “{name}” to the waveform"));
     }
 
-    fn report_osc(&mut self, e: lb_core::sim::Oscillation) {
+    fn report_osc(&mut self) {
         self.running = false;
         self.pending_settle = false;
-        self.set_status(format!("Simulation stopped: {e}. The nets involved are highlighted; press Reset."));
     }
 
     // ---- update ----------------------------------------------------------------------
@@ -974,7 +966,6 @@ impl App {
             Message::OpenPicked(Some(p)) => match io::load(&p) {
                 Ok(project) => {
                     self.load_project(project, Some(p.clone()));
-                    self.set_status(format!("Opened {}", p.display()));
                 }
                 Err(e) => self.modal = Some(Modal::Message(e.to_string())),
             },
@@ -1034,14 +1025,14 @@ impl App {
             // ---- edit
             Message::Undo => {
                 if let Some(cmd) = self.history.undo(&mut self.project) {
-                    let (label, circuit) = (cmd.label.clone(), cmd.circuit.clone());
-                    self.after_history(&circuit, format!("Undone: {label}"));
+                    let circuit = cmd.circuit.clone();
+                    self.after_history(&circuit);
                 }
             }
             Message::Redo => {
                 if let Some(cmd) = self.history.redo(&mut self.project) {
-                    let (label, circuit) = (cmd.label.clone(), cmd.circuit_after().to_string());
-                    self.after_history(&circuit, format!("Redone: {label}"));
+                    let circuit = cmd.circuit_after().to_string();
+                    self.after_history(&circuit);
                 }
             }
             Message::Copy | Message::Cut => {
@@ -1049,7 +1040,6 @@ impl App {
                 if !ids.is_empty() {
                     self.clipboard = Clip::copy(self.circuit(), &ids);
                     self.paste_count = 0;
-                    self.set_status(format!("{} components copied", ids.len()));
                     if matches!(message, Message::Cut) {
                         self.delete_selection();
                     }
@@ -1082,12 +1072,9 @@ impl App {
 
             // ---- simulation
             Message::ToggleRun => {
-                if self.sim().is_some_and(|s| s.oscillation().is_some()) {
-                    self.set_status("Oscillation: press Reset before running again.");
-                } else if self.sim().is_some() {
+                if self.sim().is_some_and(|s| s.oscillation().is_none()) {
                     self.running = !self.running;
                     self.last_frame = None;
-                    self.set_status(if self.running { "Simulation running" } else { "Simulation paused" });
                 }
             }
             Message::Reset => {
@@ -1096,7 +1083,6 @@ impl App {
                 }
                 self.pending_settle = true;
                 self.wave.start = 0.0;
-                self.set_status("Simulation reset");
             }
             Message::Step => {
                 self.running = false;
@@ -1108,11 +1094,8 @@ impl App {
                         StepKind::Tick => sim.step_tick(),
                         StepKind::Clock => sim.step_clock(),
                     };
-                    let t = sim.time();
-                    let pending = sim.pending_events();
-                    match r {
-                        Ok(()) => self.set_status(format!("Step ({kind}): t = {t}, queued events: {pending}")),
-                        Err(e) => self.report_osc(e),
+                    if r.is_err() {
+                        self.report_osc();
                     }
                     self.pending_settle = false;
                 }
@@ -1206,19 +1189,12 @@ impl App {
             }
             Message::PickTool(kind) => {
                 self.tool = Tool::Place { kind, props: Box::new(kind.default_props()), rot: 0, mirror: false };
-                self.set_status(format!(
-                    "{}: click on the canvas to place, R rotates, F flips, Esc cancels",
-                    kind.name()
-                ));
             }
             Message::PickSubcircuit(name) => {
-                if let Some(why) = self.placement_refusal(&name) {
-                    self.set_status(why);
-                } else {
+                if self.placement_refusal(&name).is_none() {
                     let mut props = Kind::Subcircuit.default_props();
                     props.circuit = name.clone();
                     self.tool = Tool::Place { kind: Kind::Subcircuit, props: Box::new(props), rot: 0, mirror: false };
-                    self.set_status(format!("Subcircuit “{name}”: click on the canvas to place it"));
                 }
             }
             Message::NewCircuit => {
@@ -1243,7 +1219,7 @@ impl App {
                 }
             }
             Message::RenameCircuit(_) if self.project.is_hdl(&self.circuit().name) => {
-                self.set_status("A circuit synthesized from HDL is named after its entity: rename it in the sources.");
+                self.warn("A circuit synthesized from HDL is named after its entity: rename it in the sources.");
             }
             Message::RenameCircuit(new) => {
                 let old = self.circuit().name.clone();
@@ -1276,9 +1252,9 @@ impl App {
                 let used = self.project.circuits.iter().any(|c| c.subcircuit_refs().any(|r| r == name));
                 let index = self.project.circuit_index(&name).unwrap_or(0);
                 if index == 0 {
-                    self.set_status("The main circuit cannot be deleted.");
+                    self.warn("The main circuit cannot be deleted.");
                 } else if used {
-                    self.set_status(format!("“{name}” is used as a subcircuit: remove its instances first."));
+                    self.warn(format!("“{name}” is used as a subcircuit: remove its instances first."));
                 } else {
                     let mut cmd = Command::new("Delete circuit", &name);
                     cmd.push(Op::RemoveCircuit(index, Box::new(self.circuit().clone())));
@@ -1298,9 +1274,9 @@ impl App {
                 let name = self.circuit().name.clone();
                 let used = self.project.circuits.iter().any(|c| c.subcircuit_refs().any(|r| r == name));
                 if self.project.is_hdl(&name) {
-                    self.set_status("A circuit synthesized from HDL is always a subcircuit: convert it first.");
+                    self.warn("A circuit synthesized from HDL is always a subcircuit: convert it first.");
                 } else if used {
-                    self.set_status(format!(
+                    self.warn(format!(
                         "“{name}” is used as a subcircuit: remove its instances before making it the main circuit."
                     ));
                 } else if let Some(i) = self.project.circuit_index(&name)
@@ -1311,7 +1287,6 @@ impl App {
                     cmd.push(Op::RemoveCircuit(i, Box::new(c.clone())));
                     cmd.push(Op::AddCircuit(0, Box::new(c)));
                     self.exec(cmd);
-                    self.set_status(format!("“{name}” is now the main circuit"));
                 }
             }
 
@@ -1330,7 +1305,6 @@ impl App {
                         cmd.push(Op::SetHdl { before: Box::new(self.project.hdl.clone()), after: Box::new(after) });
                     }
                     self.exec(cmd);
-                    self.set_status(format!("“{name}” is now an ordinary circuit"));
                 }
             }
 
@@ -1417,7 +1391,6 @@ impl App {
                             c.props.data = io::format_hex(&words, false);
                             let cmd = Command::update(&self.project, self.circuit(), vec![c]);
                             self.exec(cmd);
-                            self.set_status(format!("Imported {} words from {}", words.len(), p.display()));
                         }
                     }
                     Err(e) => self.modal = Some(Modal::Message(format!("{}: {e}", p.display()))),
@@ -1437,7 +1410,7 @@ impl App {
                         .filter(|m| !m.is_empty());
                     let words = live.unwrap_or_else(|| io::parse_hex(&c.props.data).unwrap_or_default());
                     match std::fs::write(&p, io::format_hex(&words, true)) {
-                        Ok(()) => self.set_status(format!("Exported {}", p.display())),
+                        Ok(()) => {}
                         Err(e) => self.modal = Some(Modal::Message(e.to_string())),
                     }
                 }
@@ -1451,7 +1424,7 @@ impl App {
                 if let Some(sim) = self.sim() {
                     let content = if vcd { sim.trace.export_vcd("1ns", sim.time()) } else { sim.trace.export_csv() };
                     match std::fs::write(&p, content) {
-                        Ok(()) => self.set_status(format!("Exported {}", p.display())),
+                        Ok(()) => {}
                         Err(e) => self.modal = Some(Modal::Message(e.to_string())),
                     }
                 }
@@ -1493,7 +1466,7 @@ impl App {
         false
     }
 
-    fn after_history(&mut self, circuit: &str, status: String) {
+    fn after_history(&mut self, circuit: &str) {
         self.generation += 1;
         // Undoing an edit of another circuit shows that circuit.
         let switched = self.project.circuit(circuit).is_some() && self.circuit().name != circuit;
@@ -1505,7 +1478,6 @@ impl App {
         if switched && !self.loc.view_touched {
             self.fit_view();
         }
-        self.set_status(status);
     }
 
     fn apply_config(&mut self) {
@@ -1572,8 +1544,8 @@ impl App {
         };
         let evals = sim.stats.evaluations;
         let t = sim.time();
-        if let Err(e) = result {
-            self.report_osc(e);
+        if result.is_err() {
+            self.report_osc();
         }
         let (t0, e0) = self.perf_window;
         let el = (now - t0).as_secs_f64();
@@ -1675,10 +1647,7 @@ impl App {
             }
             EditorEvent::Place { pos } => {
                 if let Some(mut c) = self.tool.ghost(pos) {
-                    if c.kind == Kind::Subcircuit
-                        && let Some(why) = self.placement_refusal(&c.props.circuit)
-                    {
-                        self.set_status(why);
+                    if c.kind == Kind::Subcircuit && self.placement_refusal(&c.props.circuit).is_some() {
                         return Task::none();
                     }
                     c.id = self.circuit().next_id();
@@ -1717,12 +1686,10 @@ impl App {
                 inst.push(id);
                 let root = self.loc.root.clone();
                 self.navigate(&name, &root, inst);
-                self.set_status(format!("Viewing an instance of “{name}” with live simulation values"));
             }
             EditorEvent::Trace { comp, pin } => self.add_trace(comp, pin),
             EditorEvent::CancelTool => {
                 self.tool = Tool::Select;
-                self.set_status("");
             }
             EditorEvent::SpacePan => self.space_panned = true,
             EditorEvent::SetWirePath { wire, path } => self.set_wire_path(wire, path),
@@ -1805,9 +1772,7 @@ impl App {
         if let Some(sim) = self.sim_mut()
             && let Some(i) = sim.netlist().comp_index(&inst, id)
         {
-            if sim.type_keys(i, &[c]) == 0 {
-                self.set_status("Keyboard buffer full: the circuit must read the characters (READ and a clock edge)");
-            }
+            sim.type_keys(i, &[c]);
             self.pending_settle = true;
         }
     }
@@ -2697,14 +2662,7 @@ impl App {
         let zoom = format!("Zoom {:.0}%", self.loc().view.scale / DEFAULT_SCALE * 100.0);
         container(
             row![
-                if self.typing_target().is_some() {
-                    text("Typing into the keyboard: keys go to the circuit. Esc to stop.")
-                        .size(theme::fs(theme::SMALL))
-                        .color(theme::colors().link)
-                        .width(Fill)
-                } else {
-                    text(self.status.clone()).size(theme::fs(theme::SMALL)).width(Fill)
-                },
+                Space::new().width(Fill),
                 text(sim_info).size(theme::fs(theme::SMALL)).color(theme::colors().muted),
                 theme::vline(),
                 text(zoom).size(theme::fs(theme::SMALL)).color(theme::colors().muted),
