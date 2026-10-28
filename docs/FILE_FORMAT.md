@@ -76,11 +76,63 @@ it an ordinary circuit.
 | Field | Meaning |
 | --- | --- |
 | `id` | Unique within the circuit. |
-| `kind` | Component type, see [COMPONENTS.md](COMPONENTS.md). |
+| `kind` | Component type, see the table below and [COMPONENTS.md](COMPONENTS.md). |
 | `pos` | Top-left corner of the (rotated) bounding box, in grid units. |
 | `rot` | Clockwise quarter turns, 0–3 (omitted when 0). |
 | `mirror` | Flip top/bottom before rotating (omitted when false). |
 | `props` | Properties; omitted fields take the default for the kind. |
+
+Component types:
+
+| `kind` | Component |
+| --- | --- |
+| `Input` | Input / Switch |
+| `Button` | Button |
+| `Constant` | Constant |
+| `Clock` | Clock |
+| `Output` | Output / Indicator |
+| `Led` | LED |
+| `Probe` | Probe |
+| `Tunnel` | Tunnel |
+| `Keyboard` | Keyboard |
+| `NumDisplay` (`HexDisplay` in older files) | Number display |
+| `SevenSeg` | 7-segment display |
+| `LedMatrix` | LED matrix |
+| `Tty` | Text terminal |
+| `Screen` | Pixel screen |
+| `And` | AND |
+| `Or` | OR |
+| `Nand` | NAND |
+| `Nor` | NOR |
+| `Xor` | XOR |
+| `Xnor` | XNOR |
+| `Not` | NOT |
+| `Buffer` | Buffer |
+| `TriBuffer` | Tri-state buffer |
+| `Mux` | Multiplexer |
+| `Demux` | Demultiplexer |
+| `Decoder` | Decoder |
+| `PriorityEncoder` | Priority encoder |
+| `Adder` | Adder |
+| `Subtractor` | Subtractor |
+| `Comparator` | Comparator |
+| `Shifter` | Shifter |
+| `Splitter` | Splitter |
+| `Merger` | Merger |
+| `Extend` | Bit extender |
+| `SrLatch` | SR latch |
+| `DLatch` | D latch |
+| `DFlipFlop` | D flip-flop |
+| `TFlipFlop` | T flip-flop |
+| `JkFlipFlop` | JK flip-flop |
+| `Register` | Register |
+| `Counter` | Counter |
+| `ShiftRegister` | Shift register |
+| `Rom` | ROM |
+| `Ram` | RAM |
+| `Subcircuit` | Subcircuit |
+| `Text` | Text |
+| `Rect` | Box |
 
 Properties:
 
